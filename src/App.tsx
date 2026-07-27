@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import "./App.css";
-import owlivionIcon from "./assets/owlivion-logo.svg";
+import owlivionIcon from "./assets/babafpv-logo.webp";
 import { Settings } from "./pages/Settings";
 import { Filters } from "./pages/Filters";
 import { AIReplyModal } from "./components/AIReplyModal";
@@ -1046,13 +1046,7 @@ function MailPanel({
         <div className="flex items-center justify-between mb-3">
           {/* Logo */}
           <div className="flex items-center gap-2.5">
-            <img src={owlivionIcon} alt="OwlMail" className="h-7 w-auto object-contain logo-glow" />
-            <div className="flex flex-col leading-none">
-              <span className="font-bold text-[15px] tracking-tight text-owl-text">
-                Owl<span className="text-owl-accent">Mail</span>
-              </span>
-              <span className="text-[9px] font-semibold tracking-[0.18em] uppercase text-owl-text-secondary/50 mt-0.5">by Owlivion</span>
-            </div>
+            <img src={owlivionIcon} alt="BabaFPV OwlMail" className="h-9 w-auto object-contain logo-glow" />
           </div>
 
           {/* Actions */}
