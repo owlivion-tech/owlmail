@@ -224,7 +224,7 @@ export const en = {
 
   // Welcome
   welcome: {
-    title: 'Welcome to OwlMail',
+    title: 'Welcome to OwlMail Pro',
     subtitle: 'Add your account to start a modern, fast, and AI-powered email experience. Works with Gmail, Outlook, Yahoo, and all IMAP-supported providers.',
     aiPowered: 'AI Powered',
     aiDesc: 'Smart replies and summarization',
@@ -234,7 +234,7 @@ export const en = {
     secureDesc: 'Local data storage',
     addAccount: 'Add Email Account',
     supportedProviders: 'Supported providers',
-    footer: 'OwlMail v1.1.0-private • Made with ♥ by Owlivion',
+    footer: 'OwlMail Pro v1.2.0 • Made with ♥ by Owlivion',
   },
 
   // Settings Page
@@ -278,7 +278,7 @@ export const en = {
       notificationSound: 'Notification Sound',
       notificationSoundDesc: 'Play sound for new emails',
       soundType: 'Sound Type',
-      owlivionSounds: 'OwlMail Custom Sounds',
+      owlivionSounds: 'OwlMail Pro Custom Sounds',
       classicSounds: 'Classic Sounds',
       listenSound: 'Listen to sound',
       soundTip: 'Click the play button to listen to each sound type',
@@ -450,13 +450,13 @@ export const en = {
     syncSettings: {
       title: 'Sync',
       subtitle: 'Sync your data across devices (encrypted and secure)',
-      owlivionAccount: 'OwlMail Account',
+      owlivionAccount: 'OwlMail Pro Account',
       syncActive: 'Sync Active',
       lastSync: 'Last sync:',
       deviceId: 'Device ID:',
       manageDevices: 'Manage Devices',
       signOut: 'Sign Out',
-      syncDescription: 'Create or sign in to an OwlMail Account to sync your data across devices.',
+      syncDescription: 'Create or sign in to an OwlMail Pro Account to sync your data across devices.',
       createOrSignIn: 'Create Account or Sign In',
       autoSync: 'Auto Sync',
       autoSyncDesc: 'Changes are automatically synced',
@@ -607,7 +607,7 @@ export const en = {
     // License Settings
     licenseSettings: {
       title: 'License',
-      subtitle: 'Your OwlMail license information',
+      subtitle: 'Your OwlMail Pro license information',
       planAndLicense: 'Plan & License',
       planSubtitle: 'Manage your current plan and access Pro features',
       plan: 'Plan',
@@ -830,7 +830,7 @@ export const en = {
   // Shortcuts Help
   shortcuts: {
     title: 'Keyboard Shortcuts',
-    subtitle: 'Learn keyboard shortcuts to use OwlMail faster',
+    subtitle: 'Learn keyboard shortcuts to use OwlMail Pro faster',
     pressToOpen: 'Press {key} to open shortcuts',
     navigation: 'Navigation',
     actions: 'Actions',
@@ -862,7 +862,7 @@ export const en = {
     quickTip: 'Quick Tip',
     quickTipDesc: 'Press ? on any screen to see shortcuts.',
     vimNavigation: 'Vim-Style Navigation',
-    vimNavigationDesc: 'OwlMail supports keyboard shortcuts inspired by the Vim editor.',
+    vimNavigationDesc: 'OwlMail Pro supports keyboard shortcuts inspired by the Vim editor.',
     down: 'Down',
     up: 'Up',
     open: 'Open',
@@ -1010,7 +1010,7 @@ export const en = {
 
   // OwlMail Account Modal
   owlivionAccount: {
-    title: 'OwlMail Account',
+    title: 'OwlMail Pro Account',
     signIn: 'Sign In',
     createAccount: 'Create Account',
     email: 'Email',
@@ -1304,7 +1304,7 @@ export const en = {
     system: 'System',
     owlivion: 'Owl Hoot',
     whisper: 'Night Whisper',
-    call: 'OwlMail Signature',
+    call: 'OwlMail Pro Signature',
     moonlight: 'Moonlight Chime',
     gentleDesc: 'Professional and gentle notification sound',
     popDesc: 'Short and attention-grabbing',

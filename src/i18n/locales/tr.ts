@@ -236,7 +236,7 @@ export const tr: TranslationKeys = {
     secureDesc: 'Yerel veri saklama',
     addAccount: 'E-posta Hesabı Ekle',
     supportedProviders: 'Desteklenen sağlayıcılar',
-    footer: 'OwlMail v1.1.0-private • Made with ♥ by Owlivion',
+    footer: 'OwlMail Pro v1.2.0 • Made with ♥ by Owlivion',
   },
 
   // Settings Page
@@ -280,7 +280,7 @@ export const tr: TranslationKeys = {
       notificationSound: 'Bildirim Sesi',
       notificationSoundDesc: 'Yeni e-postalar için ses çal',
       soundType: 'Ses Türü',
-      owlivionSounds: 'OwlMail Özel Sesler',
+      owlivionSounds: 'OwlMail Pro Özel Sesler',
       classicSounds: 'Klasik Sesler',
       listenSound: 'Sesi dinle',
       soundTip: 'Her ses türünü dinlemek için play butonuna tıklayın',
@@ -452,13 +452,13 @@ export const tr: TranslationKeys = {
     syncSettings: {
       title: 'Senkronizasyon',
       subtitle: 'Verilerinizi cihazlar arası senkronize edin (şifreli ve güvenli)',
-      owlivionAccount: 'OwlMail Hesabı',
+      owlivionAccount: 'OwlMail Pro Hesabı',
       syncActive: 'Senkronizasyon Aktif',
       lastSync: 'Son senkronizasyon:',
       deviceId: 'Cihaz ID:',
       manageDevices: 'Cihazları Yönet',
       signOut: 'Hesaptan Çıkış Yap',
-      syncDescription: 'Verilerinizi cihazlar arasında senkronize etmek için bir OwlMail Hesabı oluşturun veya giriş yapın.',
+      syncDescription: 'Verilerinizi cihazlar arasında senkronize etmek için bir OwlMail Pro Hesabı oluşturun veya giriş yapın.',
       createOrSignIn: 'Hesap Oluştur veya Giriş Yap',
       autoSync: 'Otomatik Senkronizasyon',
       autoSyncDesc: 'Değişiklikler otomatik olarak senkronize edilsin',
@@ -609,7 +609,7 @@ export const tr: TranslationKeys = {
     // License Settings
     licenseSettings: {
       title: 'Lisans',
-      subtitle: 'OwlMail lisans bilgileriniz',
+      subtitle: 'OwlMail Pro lisans bilgileriniz',
       planAndLicense: 'Plan & Lisans',
       planSubtitle: 'Mevcut planınızı yönetin ve Pro özelliklerine erişin',
       plan: 'Plan',
@@ -864,7 +864,7 @@ export const tr: TranslationKeys = {
     quickTip: 'Hızlı İpucu',
     quickTipDesc: 'Kısayolları görmek için herhangi bir ekranda ? tuşuna basın.',
     vimNavigation: 'Vim Tarzı Gezinme',
-    vimNavigationDesc: 'OwlMail, Vim editöründen ilham alan klavye kısayollarını destekler.',
+    vimNavigationDesc: 'OwlMail Pro, Vim editöründen ilham alan klavye kısayollarını destekler.',
     down: 'Aşağı',
     up: 'Yukarı',
     open: 'Aç',
@@ -1012,7 +1012,7 @@ export const tr: TranslationKeys = {
 
   // OwlMail Account Modal
   owlivionAccount: {
-    title: 'OwlMail Hesabı',
+    title: 'OwlMail Pro Hesabı',
     signIn: 'Giriş Yap',
     createAccount: 'Hesap Oluştur',
     email: 'E-posta',

@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Owlivion Mail
+Name=OwlMail Pro
 Comment=Modern AI-powered email client
 Comment[tr]=Modern yapay zeka destekli e-posta istemcisi
 GenericName=Email Client
@@ -12,7 +12,7 @@ Categories=Network;Email;Office;
 Keywords=email;mail;imap;smtp;gmail;outlook;
 MimeType=x-scheme-handler/mailto;
 StartupNotify=true
-StartupWMClass=Owlivion Mail
+StartupWMClass=OwlMail Pro
 Actions=Compose;
 
 [Desktop Action Compose]

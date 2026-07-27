@@ -1016,7 +1016,7 @@ function MailPanel({
     return (
       <div className="sidebar-panel flex flex-col items-center py-3 gap-1 border-r border-owl-border/30" style={{ width: 52 }}>
         <button onClick={onToggleCollapse} title="Genişlet" className="mb-1 p-1.5 rounded-lg hover:bg-owl-surface-2 transition-colors">
-          <img src={owlivionIcon} alt="OwlMail" className="h-5 w-5 object-contain logo-glow" />
+          <img src={owlivionIcon} alt="OwlMail Pro" className="h-5 w-5 object-contain logo-glow" />
         </button>
         <button onClick={onComposeClick} title="Compose (C)" className="action-btn text-owl-accent hover:text-owl-accent/80 mb-1">
           <Icons.Plus />
@@ -1057,7 +1057,7 @@ function MailPanel({
         <div className="flex items-center justify-between mb-3">
           {/* Logo */}
           <div className="flex items-center gap-2.5">
-            <img src={owlivionIcon} alt="BabaFPV OwlMail" className="h-9 w-auto object-contain logo-glow" />
+            <img src={owlivionIcon} alt="OwlMail Pro" className="h-9 w-auto object-contain logo-glow" />
           </div>
 
           {/* Actions */}
@@ -4080,7 +4080,7 @@ function App() {
   // Dynamic tab title — unread count
   useEffect(() => {
     const unread = emails.filter(e => !e.read && !e.deleted && !e.archived).length;
-    document.title = unread > 0 ? `(${unread}) OwlMail` : 'OwlMail';
+    document.title = unread > 0 ? `(${unread}) OwlMail Pro` : 'OwlMail Pro';
   }, [emails]);
 
   // Mark as read when selected (with backend call)

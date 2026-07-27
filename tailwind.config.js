@@ -27,9 +27,9 @@ export default {
       boxShadow: {
         'owl': '0 4px 20px rgba(0, 0, 0, 0.5)',
         'owl-lg': '0 8px 40px rgba(0, 0, 0, 0.6)',
-        'owl-accent': '0 4px 20px rgba(139, 92, 246, 0.35)',
-        'owl-accent-lg': '0 8px 40px rgba(139, 92, 246, 0.5)',
-        'owl-glow': '0 0 24px rgba(139, 92, 246, 0.12)',
+        'owl-accent': '0 4px 20px rgba(233, 30, 99, 0.35)',
+        'owl-accent-lg': '0 8px 40px rgba(233, 30, 99, 0.5)',
+        'owl-glow': '0 0 24px rgba(233, 30, 99, 0.12)',
       },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',
