@@ -648,6 +648,7 @@ function MailPanel({
   panelWidth = 380,
   currentTheme = 'dark',
   onThemeToggle,
+  onMarkAllRead,
 }: {
   emails: Email[];
   selectedId: string | null;
@@ -693,6 +694,7 @@ function MailPanel({
   panelWidth?: number;
   currentTheme?: 'dark' | 'light';
   onThemeToggle?: () => void;
+  onMarkAllRead?: () => void;
 }) {
   const { t, lang } = useTranslation();
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
@@ -1575,6 +1577,19 @@ function MailPanel({
                   `${filteredEmails.length} emails`
                 )}
               </span>
+              {/* Mark all read button */}
+              {filteredEmails.some(e => !e.read) && onMarkAllRead && (
+                <button
+                  onClick={onMarkAllRead}
+                  className="p-1 rounded hover:bg-owl-bg text-owl-text-secondary hover:text-owl-accent transition-colors"
+                  title="Tümünü okundu işaretle"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 12l2 2 4-4" />
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                  </svg>
+                </button>
+              )}
               {/* Sort button */}
               <div className="relative" ref={sortMenuRef}>
                 <button
@@ -4237,6 +4252,9 @@ function App() {
           const saved = JSON.parse(localStorage.getItem('owlivion-settings') || '{}');
           localStorage.setItem('owlivion-settings', JSON.stringify({ ...saved, theme: next }));
           document.documentElement.setAttribute('data-theme', next);
+        }}
+        onMarkAllRead={() => {
+          setEmails(prev => prev.map(e => ({ ...e, read: true })));
         }}
       />}
       {/* Draggable divider */}

@@ -388,6 +388,31 @@ export function EmailView({
   // Copy email address
   const [copiedEmail, setCopiedEmail] = useState(false);
 
+  // Text Selection Popup
+  const [selectionPopup, setSelectionPopup] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [selectionCopied, setSelectionCopied] = useState(false);
+
+  const handleBodyMouseUp = useCallback(() => {
+    const sel = window.getSelection();
+    const text = sel?.toString().trim() || '';
+    if (text.length < 2 || text.length > 600) { setSelectionPopup(null); return; }
+    const range = sel?.getRangeAt(0);
+    const rect = range?.getBoundingClientRect();
+    if (rect) setSelectionPopup({ x: rect.left + rect.width / 2, y: rect.top, text });
+  }, []);
+
+  // Close selection popup on click outside
+  useEffect(() => {
+    const handler = () => {
+      if (!window.getSelection()?.toString().trim()) setSelectionPopup(null);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Link hover bar
+  const [hoveredLink, setHoveredLink] = useState<string | null>(null);
+
   // Reading Progress Bar
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -1010,7 +1035,18 @@ export function EmailView({
       )}
 
       {/* ─── EMAIL BODY ─── */}
-      <div ref={bodyScrollRef} onScroll={handleBodyScroll} className="flex-1 overflow-y-auto px-6 pt-4 pb-6" style={{ fontSize: emailFontSize }}>
+      <div
+        ref={bodyScrollRef}
+        onScroll={handleBodyScroll}
+        onMouseUp={handleBodyMouseUp}
+        onMouseOver={(e) => {
+          const a = (e.target as HTMLElement).closest('a');
+          setHoveredLink(a?.href || null);
+        }}
+        onMouseOut={() => setHoveredLink(null)}
+        className="flex-1 overflow-y-auto px-6 pt-4 pb-6"
+        style={{ fontSize: emailFontSize }}
+      >
         {hasHtmlContent ? (
           <div
             className="email-content text-owl-text leading-relaxed text-[15px]"
@@ -1307,6 +1343,81 @@ export function EmailView({
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ─── TEXT SELECTION POPUP ─── */}
+      {selectionPopup && (
+        <div
+          className="fixed z-[600] flex items-center gap-0.5 p-1 rounded-xl bg-owl-surface border border-owl-border/60 shadow-owl-lg animate-scale-in pointer-events-auto"
+          style={{ left: selectionPopup.x, top: selectionPopup.y - 8, transform: 'translate(-50%, -100%)' }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(selectionPopup.text);
+              setSelectionCopied(true);
+              setTimeout(() => { setSelectionCopied(false); setSelectionPopup(null); }, 1200);
+            }}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-owl-text-secondary hover:text-owl-text hover:bg-owl-surface-2 rounded-lg transition-all"
+            title="Kopyala"
+          >
+            {selectionCopied ? (
+              <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            )}
+            <span>Kopyala</span>
+          </button>
+          <div className="w-px h-4 bg-owl-border/40" />
+          <button
+            onClick={() => { window.open(`https://www.google.com/search?q=${encodeURIComponent(selectionPopup.text)}`, '_blank'); setSelectionPopup(null); }}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-owl-text-secondary hover:text-owl-text hover:bg-owl-surface-2 rounded-lg transition-all"
+            title="Web'de ara"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <span>Ara</span>
+          </button>
+          <div className="w-px h-4 bg-owl-border/40" />
+          <button
+            onClick={async () => {
+              setSelectionPopup(null);
+              setIsTranslating(true);
+              try {
+                const resp = await fetch(`${HOME_AI_URL}/v1/chat/completions`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    model: HOME_AI_DEFAULT_MODEL,
+                    messages: [
+                      { role: 'system', content: 'Verilen metni Türkçeye çevir. Sadece çeviriyi yaz.' },
+                      { role: 'user', content: selectionPopup.text },
+                    ],
+                    max_tokens: 300,
+                  }),
+                });
+                const data = await resp.json();
+                setTranslatedBody(data.choices?.[0]?.message?.content || null);
+              } catch { /* ignore */ } finally {
+                setIsTranslating(false);
+              }
+            }}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-owl-text-secondary hover:text-amber-400 hover:bg-amber-400/10 rounded-lg transition-all"
+            title="Türkçeye çevir"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>
+            <span>Çevir</span>
+          </button>
+        </div>
+      )}
+
+      {/* ─── LINK HOVER BAR ─── */}
+      {hoveredLink && (
+        <div className="fixed bottom-0 left-0 right-0 z-[500] px-4 py-1.5 bg-owl-surface/95 border-t border-owl-border/30 backdrop-blur-sm pointer-events-none">
+          <p className="text-[11px] text-owl-text-secondary/70 truncate">
+            <span className="text-owl-text-secondary/40 mr-1.5">↗</span>
+            {hoveredLink}
+          </p>
         </div>
       )}
 
