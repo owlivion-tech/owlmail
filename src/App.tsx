@@ -243,6 +243,19 @@ function saveNote(id: string, text: string) {
 
 function getNote(id: string): string { return getNotes()[id] || ''; }
 
+// ─── Email Importance ────────────────────────────────────────────────────────
+
+const IMPORTANT_KEY = 'owlmail-important';
+function getImportantSet(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(IMPORTANT_KEY) || '[]')); } catch { return new Set(); }
+}
+function toggleImportant(id: string): void {
+  const s = getImportantSet();
+  if (s.has(id)) s.delete(id); else s.add(id);
+  localStorage.setItem(IMPORTANT_KEY, JSON.stringify([...s]));
+}
+function isImportant(id: string): boolean { return getImportantSet().has(id); }
+
 // ─── Emoji Reactions ─────────────────────────────────────────────────────────
 
 const REACTION_KEY = 'owlmail-reactions';
@@ -804,6 +817,8 @@ function MailPanel({
     if (activeFolder === '__snoozed__') return 'Ertelendi';
     if (activeFolder === '__followup__') return 'Takip';
     if (activeFolder === '__scheduled__') return 'Zamanlanmış';
+    if (activeFolder === '__important__') return 'Önemli';
+    if (activeFolder === '__thisweek__') return 'Bu Hafta';
     const folder = imapFolders.find(f => f.path === activeFolder);
     return folder?.name || 'Inbox';
   }, [activeFolder, imapFolders]);
@@ -929,6 +944,11 @@ function MailPanel({
       result = result.filter(e => isSnoozedNow(e.id));
     } else if (activeFolder === '__followup__') {
       result = result.filter(e => !!getFollowup(e.id));
+    } else if (activeFolder === '__important__') {
+      result = result.filter(e => isImportant(e.id) && !e.deleted);
+    } else if (activeFolder === '__thisweek__') {
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      result = result.filter(e => e.date.getTime() >= weekAgo && !e.deleted);
     } else {
       result = result.filter(e => !isSnoozedNow(e.id));
     }
@@ -1473,6 +1493,59 @@ function MailPanel({
             );
           })()}
 
+          {/* Important */}
+          {(() => {
+            const isActive = activeFolder === '__important__';
+            const count = emails.filter(e => isImportant(e.id) && !e.deleted).length;
+            if (count === 0 && !isActive) return null;
+            return (
+              <button
+                onClick={() => onFolderChange('__important__')}
+                className={`folder-tab flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] ${
+                  isActive ? "folder-tab-active font-semibold" : "text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text"
+                }`}
+                title="Önemli"
+              >
+                <svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                </svg>
+                {isActive && <span>Önemli</span>}
+                {count > 0 && (
+                  <span className={`text-[10px] min-w-[16px] text-center px-1 py-px rounded-full leading-tight ${
+                    isActive ? 'bg-orange-500 text-white font-bold' : 'bg-orange-500/20 text-orange-400'
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })()}
+
+          {/* Bu Hafta */}
+          {(() => {
+            const isActive = activeFolder === '__thisweek__';
+            const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const count = emails.filter(e => e.date.getTime() >= weekAgo && !e.deleted).length;
+            return (
+              <button
+                onClick={() => onFolderChange('__thisweek__')}
+                className={`folder-tab flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] ${
+                  isActive ? "folder-tab-active font-semibold" : "text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text"
+                }`}
+                title="Bu Hafta"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="18" height="18" rx="2" />
+                  <path strokeLinecap="round" d="M16 2v4M8 2v4M3 10h18"/>
+                </svg>
+                {isActive && <span>Bu Hafta</span>}
+                {count > 0 && (
+                  <span className={`text-[10px] min-w-[16px] text-center px-1 py-px rounded-full leading-tight ${
+                    isActive ? 'bg-owl-accent text-white font-bold' : 'bg-owl-surface-2 text-owl-text-secondary'
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })()}
+
           <div className="flex-1" />
 
           {/* All Folders toggle */}
@@ -1808,6 +1881,16 @@ function MailPanel({
                           >
                             <svg className="w-3.5 h-3.5" fill={isPinned(email.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                            </svg>
+                          </span>
+                          {/* Importance button */}
+                          <span
+                            onClick={(e) => { e.stopPropagation(); toggleImportant(email.id); forceUpdate(n => n + 1); }}
+                            className={`shrink-0 p-0.5 rounded cursor-pointer transition-colors ${isImportant(email.id) ? 'text-orange-400' : 'text-owl-text-secondary/30 hover:text-orange-400'}`}
+                            title={isImportant(email.id) ? 'Önemli işaretini kaldır' : 'Önemli işaretle'}
+                          >
+                            <svg className="w-3.5 h-3.5" fill={isImportant(email.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                             </svg>
                           </span>
                           {/* Label picker */}
@@ -3198,6 +3281,10 @@ function App() {
   const [pendingSend, setPendingSend] = useState<{ draft: DraftEmail; secondsLeft: number } | null>(null);
   const pendingSendTimerRef = useRef<{ countdown: ReturnType<typeof setInterval>; commit: ReturnType<typeof setTimeout> } | null>(null);
 
+  // Undo Archive/Delete state
+  const [undoAction, setUndoAction] = useState<{ type: 'archive' | 'delete'; label: string; emailId: string; secondsLeft: number } | null>(null);
+  const undoActionTimerRef = useRef<{ countdown: ReturnType<typeof setInterval>; commit: ReturnType<typeof setTimeout> } | null>(null);
+
   // Focus Mode (Zen/distraction-free reading)
   const [focusMode, setFocusMode] = useState(false);
   const [accentTheme, setAccentTheme] = useState<AccentTheme>(() => {
@@ -3461,52 +3548,92 @@ function App() {
     }
   }, [selectedEmail, selectedAccountId, emails, activeFolder]);
 
+  const startUndoTimer = (type: 'archive' | 'delete', emailId: string, commit: () => void) => {
+    if (undoActionTimerRef.current) {
+      clearInterval(undoActionTimerRef.current.countdown);
+      clearTimeout(undoActionTimerRef.current.commit);
+    }
+    const label = type === 'archive' ? 'Arşivlendi' : 'Silindi';
+    setUndoAction({ type, label, emailId, secondsLeft: 5 });
+    const countdown = setInterval(() => {
+      setUndoAction(prev => {
+        if (!prev) return null;
+        if (prev.secondsLeft <= 1) { clearInterval(countdown); return null; }
+        return { ...prev, secondsLeft: prev.secondsLeft - 1 };
+      });
+    }, 1000);
+    const timer = setTimeout(() => {
+      setUndoAction(null);
+      commit();
+    }, 5000);
+    undoActionTimerRef.current = { countdown, commit: timer };
+  };
+
+  const handleUndoAction = () => {
+    if (!undoAction) return;
+    if (undoActionTimerRef.current) {
+      clearInterval(undoActionTimerRef.current.countdown);
+      clearTimeout(undoActionTimerRef.current.commit);
+      undoActionTimerRef.current = null;
+    }
+    const { emailId } = undoAction;
+    setEmails(prev => prev.map(e => e.id === emailId
+      ? { ...e, archived: false, deleted: false }
+      : e
+    ));
+    setSelectedEmail(emailId);
+    setUndoAction(null);
+  };
+
   const handleArchive = useCallback(async () => {
     if (!selectedEmail || !selectedAccountId) return;
 
-    // Optimistic update
+    // Optimistic update immediately (visual)
     setEmails(prev => prev.map(e => e.id === selectedEmail ? { ...e, archived: true } : e));
 
+    const archivedId = selectedEmail;
     // Select next email
     const idx = visibleEmails.findIndex(e => e.id === selectedEmail);
     const nextEmail = idx < visibleEmails.length - 1 ? visibleEmails[idx + 1].id :
                       idx > 0 ? visibleEmails[idx - 1].id : null;
     setSelectedEmail(nextEmail);
 
-    // Call backend
-    try {
-      const { archiveEmail } = await import('./services/mailService');
-      const { accountId: resolvedAccountId, uid } = parseEmailId(selectedEmail, selectedAccountId);
-      await archiveEmail(resolvedAccountId, uid);
-    } catch (err) {
-      console.error('Failed to archive:', err);
-      // Revert on error
-      setEmails(prev => prev.map(e => e.id === selectedEmail ? { ...e, archived: false } : e));
-    }
+    // Delay backend call to allow undo
+    startUndoTimer('archive', archivedId, async () => {
+      try {
+        const { archiveEmail } = await import('./services/mailService');
+        const { accountId: resolvedAccountId, uid } = parseEmailId(archivedId, selectedAccountId);
+        await archiveEmail(resolvedAccountId, uid);
+      } catch (err) {
+        console.error('Failed to archive:', err);
+        setEmails(prev => prev.map(e => e.id === archivedId ? { ...e, archived: false } : e));
+      }
+    });
   }, [selectedEmail, selectedAccountId, visibleEmails]);
 
   const handleDelete = useCallback(async () => {
     if (!selectedEmail || !selectedAccountId) return;
 
-    // Optimistic update
+    // Optimistic update immediately
     setEmails(prev => prev.map(e => e.id === selectedEmail ? { ...e, deleted: true } : e));
 
-    // Select next email
+    const deletedId = selectedEmail;
     const idx = visibleEmails.findIndex(e => e.id === selectedEmail);
     const nextEmail = idx < visibleEmails.length - 1 ? visibleEmails[idx + 1].id :
                       idx > 0 ? visibleEmails[idx - 1].id : null;
     setSelectedEmail(nextEmail);
 
-    // Call backend
-    try {
-      const { deleteEmail } = await import('./services/mailService');
-      const { accountId: resolvedAccountId, uid } = parseEmailId(selectedEmail, selectedAccountId);
-      await deleteEmail(resolvedAccountId, uid, false, activeFolder);
-    } catch (err) {
-      console.error('Failed to delete:', err);
-      // Revert on error
-      setEmails(prev => prev.map(e => e.id === selectedEmail ? { ...e, deleted: false } : e));
-    }
+    // Delay backend call to allow undo
+    startUndoTimer('delete', deletedId, async () => {
+      try {
+        const { deleteEmail } = await import('./services/mailService');
+        const { accountId: resolvedAccountId, uid } = parseEmailId(deletedId, selectedAccountId);
+        await deleteEmail(resolvedAccountId, uid, false, activeFolder);
+      } catch (err) {
+        console.error('Failed to delete:', err);
+        setEmails(prev => prev.map(e => e.id === deletedId ? { ...e, deleted: false } : e));
+      }
+    });
   }, [selectedEmail, selectedAccountId, visibleEmails, activeFolder]);
 
   // ─── Bulk Actions ────────────────────────────────────────────────────────────
@@ -4525,6 +4652,29 @@ function App() {
             <div className="w-px h-4 bg-owl-border/60" />
             <button
               onClick={handleUndoSend}
+              className="text-sm font-semibold text-owl-accent hover:text-owl-accent-hover transition-colors"
+            >
+              Geri Al
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Undo Archive/Delete Toast */}
+      {undoAction && (
+        <div className="fixed bottom-6 right-6 z-[200] animate-slide-up">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-owl-surface border border-owl-border/80 shadow-owl-lg backdrop-blur-sm">
+            <svg className="w-4 h-4 text-owl-text-secondary shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              {undoAction.type === 'archive'
+                ? <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                : <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              }
+            </svg>
+            <span className="text-sm text-owl-text">{undoAction.label}</span>
+            <span className="text-xs font-mono text-owl-text-secondary tabular-nums">{undoAction.secondsLeft}s</span>
+            <div className="w-px h-4 bg-owl-border/60" />
+            <button
+              onClick={handleUndoAction}
               className="text-sm font-semibold text-owl-accent hover:text-owl-accent-hover transition-colors"
             >
               Geri Al
