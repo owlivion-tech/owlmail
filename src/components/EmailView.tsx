@@ -3,7 +3,7 @@
 // Apple-inspired clarity + OwlMail identity
 // ============================================================================
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useTranslation } from '../i18n';
 import owlivionIcon from '../assets/owlivion-logo.svg';
@@ -413,6 +413,12 @@ export function EmailView({
   // Link hover bar
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
 
+  // Find Bar (Ctrl+F)
+  const [findBarOpen, setFindBarOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findCurrentIdx, setFindCurrentIdx] = useState(0);
+  const findInputRef = useRef<HTMLInputElement>(null);
+
   // Reading Progress Bar
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -454,6 +460,9 @@ export function EmailView({
     setSmartReplies([]);
     setScrollProgress(0);
     setTranslatedBody(null);
+    setFindBarOpen(false);
+    setFindQuery('');
+    setFindCurrentIdx(0);
     if (bodyScrollRef.current) bodyScrollRef.current.scrollTop = 0;
   }, [email?.id]);
 
@@ -573,6 +582,54 @@ export function EmailView({
   const sanitizedHtml = hasHtmlContent && htmlToSanitize
     ? sanitizeEmailHtml(htmlToSanitize, !shouldShowImages, t('app.imageHidden'))
     : null;
+
+  // Find-in-email highlight
+  const [highlightedHtml, findMatchCount] = useMemo(() => {
+    if (!findQuery.trim() || !sanitizedHtml) return [null, 0] as [null, number];
+    const escaped = findQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'gi');
+    let count = 0;
+    const result = sanitizedHtml.replace(regex, (match) => {
+      count++;
+      return `<mark class="find-hl" data-fi="${count}">${match}</mark>`;
+    });
+    return [result, count] as [string, number];
+  }, [findQuery, sanitizedHtml]);
+
+  // Scroll to current find match
+  useEffect(() => {
+    if (!findBarOpen || !bodyScrollRef.current || !findQuery.trim()) return;
+    const marks = bodyScrollRef.current.querySelectorAll<HTMLElement>('.find-hl');
+    marks.forEach((m, i) => {
+      if (i === findCurrentIdx) {
+        m.style.background = 'rgba(233,30,99,0.55)';
+        m.style.outline = '2px solid rgba(233,30,99,0.9)';
+        m.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      } else {
+        m.style.background = 'rgba(255,235,0,0.35)';
+        m.style.outline = '';
+      }
+    });
+  }, [findCurrentIdx, findBarOpen, findQuery, highlightedHtml]);
+
+  // Ctrl+F opens find bar
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!email) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setFindBarOpen(true);
+        setTimeout(() => findInputRef.current?.focus(), 50);
+      }
+      if (e.key === 'Escape' && findBarOpen) {
+        setFindBarOpen(false);
+        setFindQuery('');
+        setFindCurrentIdx(0);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [email, findBarOpen]);
 
   const trackerCount = (trackingAnalysis?.trackingPixels?.length || 0) + (trackingAnalysis?.trackingLinks?.length || 0);
   const isPhishingDangerous = phishingAnalysis && phishingAnalysis.score >= 60;
@@ -1034,6 +1091,47 @@ export function EmailView({
         </div>
       )}
 
+      {/* ─── FIND BAR ─── */}
+      {findBarOpen && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-owl-border/50 bg-owl-surface/80 backdrop-blur-sm">
+          <svg className="w-3.5 h-3.5 text-owl-text-secondary shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"/><path strokeLinecap="round" d="M21 21l-4.35-4.35"/>
+          </svg>
+          <input
+            ref={findInputRef}
+            value={findQuery}
+            onChange={(e) => { setFindQuery(e.target.value); setFindCurrentIdx(0); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (findMatchCount > 0) setFindCurrentIdx(i => (i + 1) % findMatchCount);
+              }
+              if (e.key === 'Escape') { setFindBarOpen(false); setFindQuery(''); setFindCurrentIdx(0); }
+            }}
+            placeholder="Ara…"
+            className="flex-1 bg-transparent text-sm text-owl-text outline-none placeholder:text-owl-text-secondary/40"
+          />
+          {findQuery.trim() && (
+            <span className="text-[11px] text-owl-text-secondary tabular-nums shrink-0">
+              {findMatchCount === 0 ? 'bulunamadı' : `${findCurrentIdx + 1} / ${findMatchCount}`}
+            </span>
+          )}
+          {findMatchCount > 1 && (
+            <>
+              <button onClick={() => setFindCurrentIdx(i => (i - 1 + findMatchCount) % findMatchCount)} className="p-0.5 hover:text-owl-accent transition-colors text-owl-text-secondary">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7"/></svg>
+              </button>
+              <button onClick={() => setFindCurrentIdx(i => (i + 1) % findMatchCount)} className="p-0.5 hover:text-owl-accent transition-colors text-owl-text-secondary">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+            </>
+          )}
+          <button onClick={() => { setFindBarOpen(false); setFindQuery(''); setFindCurrentIdx(0); }} className="p-0.5 hover:text-owl-accent transition-colors text-owl-text-secondary">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      )}
+
       {/* ─── EMAIL BODY ─── */}
       <div
         ref={bodyScrollRef}
@@ -1050,7 +1148,7 @@ export function EmailView({
         {hasHtmlContent ? (
           <div
             className="email-content text-owl-text leading-relaxed text-[15px]"
-            dangerouslySetInnerHTML={{ __html: sanitizedHtml! }}
+            dangerouslySetInnerHTML={{ __html: highlightedHtml ?? sanitizedHtml! }}
           />
         ) : (
           <div className="whitespace-pre-wrap text-owl-text leading-relaxed text-[15px]">

@@ -3943,6 +3943,21 @@ function App() {
     }
   }, [selectedEmail, visibleEmails]);
 
+  const navigateUnread = useCallback((direction: 'next' | 'prev') => {
+    if (visibleEmails.length === 0) return;
+    const currentIdx = visibleEmails.findIndex(e => e.id === selectedEmail);
+    const unreadEmails = visibleEmails.filter(e => !e.read);
+    if (unreadEmails.length === 0) return;
+    if (direction === 'next') {
+      const next = visibleEmails.find((e, i) => !e.read && i > currentIdx);
+      setSelectedEmail((next || unreadEmails[0]).id);
+    } else {
+      const candidates = visibleEmails.filter((e, i) => !e.read && i < currentIdx);
+      const prev = candidates[candidates.length - 1];
+      setSelectedEmail((prev || unreadEmails[unreadEmails.length - 1]).id);
+    }
+  }, [selectedEmail, visibleEmails]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -3982,6 +3997,8 @@ function App() {
       switch (e.key.toLowerCase()) {
         case "j": navigateEmail('next'); break;
         case "k": navigateEmail('prev'); break;
+        case "]": navigateUnread('next'); break;
+        case "[": navigateUnread('prev'); break;
         case "c": e.preventDefault(); openCompose('new'); break;
         case "r": if (currentEmail) openCompose('reply'); break;
         case "a": if (currentEmail) openCompose('replyAll'); break;
@@ -4002,7 +4019,7 @@ function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commandPaletteOpen, aiReplyOpen, composeOpen, shortcutsHelpOpen, currentEmail, navigateEmail, openCompose, handleArchive, handleDelete, handleToggleStar, handleToggleRead, selectedEmails, handleBulkClear, focusMode]);
+  }, [commandPaletteOpen, aiReplyOpen, composeOpen, shortcutsHelpOpen, currentEmail, navigateEmail, navigateUnread, openCompose, handleArchive, handleDelete, handleToggleStar, handleToggleRead, selectedEmails, handleBulkClear, focusMode]);
 
   // Dynamic tab title — unread count
   useEffect(() => {

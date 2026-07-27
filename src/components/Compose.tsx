@@ -883,6 +883,16 @@ export function Compose({
           </div>
 
           <div className="flex items-center gap-3">
+            {!mobile && (() => {
+              const bodyText = editorBodyHtml.replace(/<[^>]*>/g, '').trim();
+              const words = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
+              const chars = bodyText.length;
+              return words > 0 ? (
+                <span className="text-[11px] text-owl-text-secondary/50 tabular-nums">
+                  {words} kelime · {chars} karakter
+                </span>
+              ) : null;
+            })()}
             {!mobile && (
               <span className="text-xs text-owl-text-secondary">
                 <kbd className="px-1.5 py-0.5 bg-owl-surface border border-owl-border rounded text-[10px]">Ctrl+Enter</kbd> {t('compose.ctrlEnterSend')}
