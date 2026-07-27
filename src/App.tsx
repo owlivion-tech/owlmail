@@ -643,6 +643,8 @@ function MailPanel({
   collapsed = false,
   onToggleCollapse,
   panelWidth = 380,
+  currentTheme = 'dark',
+  onThemeToggle,
 }: {
   emails: Email[];
   selectedId: string | null;
@@ -686,6 +688,8 @@ function MailPanel({
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   panelWidth?: number;
+  currentTheme?: 'dark' | 'light';
+  onThemeToggle?: () => void;
 }) {
   const { t, lang } = useTranslation();
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
@@ -2221,6 +2225,24 @@ function MailPanel({
             >
               <Icons.Filter />
             </button>
+            {/* Dark/Light theme toggle */}
+            {onThemeToggle && (
+              <button
+                onClick={onThemeToggle}
+                className="action-btn"
+                title={currentTheme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'}
+              >
+                {currentTheme === 'dark' ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M12 7a5 5 0 010 10 5 5 0 010-10z"/>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                  </svg>
+                )}
+              </button>
+            )}
             <button
               onClick={onSettingsClick}
               className="action-btn"
@@ -2390,6 +2412,12 @@ function App() {
   const [autoMarkReadDelay, setAutoMarkReadDelay] = useState(2); // seconds
   const [appSettings, setAppSettings] = useState<SettingsType>(DEFAULT_SETTINGS);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+
+  // Apply dark/light theme to document
+  useEffect(() => {
+    const theme = appSettings.theme || 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [appSettings.theme]);
 
   // Load settings from localStorage
   const loadSettings = useCallback(() => {
@@ -4190,6 +4218,15 @@ function App() {
         collapsed={mailPanelCollapsed}
         onToggleCollapse={() => setMailPanelCollapsed(c => { const n = !c; localStorage.setItem('owlmail-panel-collapsed', String(n)); return n; })}
         panelWidth={mailPanelCollapsed ? 52 : mailPanelWidth}
+        currentTheme={(appSettings.theme as 'dark' | 'light') || 'dark'}
+        onThemeToggle={() => {
+          const next: 'dark' | 'light' = (appSettings.theme === 'light') ? 'dark' : 'light';
+          const updated = { ...appSettings, theme: next };
+          setAppSettings(updated);
+          const saved = JSON.parse(localStorage.getItem('owlivion-settings') || '{}');
+          localStorage.setItem('owlivion-settings', JSON.stringify({ ...saved, theme: next }));
+          document.documentElement.setAttribute('data-theme', next);
+        }}
       />}
       {/* Draggable divider */}
       {!focusMode && !mailPanelCollapsed && (

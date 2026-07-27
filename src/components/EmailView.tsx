@@ -369,6 +369,10 @@ export function EmailView({
   const [smartReplies, setSmartReplies] = useState<string[]>([]);
   const [isGeneratingSmartReplies, setIsGeneratingSmartReplies] = useState(false);
 
+  // Email Translation
+  const [translatedBody, setTranslatedBody] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+
   // Reading Progress Bar
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -405,12 +409,39 @@ export function EmailView({
     };
   }, [readingMode, email]);
 
-  // Reset smart replies and scroll progress when email changes
+  // Reset per-email state when email changes
   useEffect(() => {
     setSmartReplies([]);
     setScrollProgress(0);
+    setTranslatedBody(null);
     if (bodyScrollRef.current) bodyScrollRef.current.scrollTop = 0;
   }, [email?.id]);
+
+  const handleTranslate = useCallback(async () => {
+    if (!email) return;
+    setIsTranslating(true);
+    try {
+      const rawText = (email.bodyText || email.bodyHtml?.replace(/<[^>]*>/g, '') || email.preview || '').slice(0, 2000);
+      const resp = await fetch(`${HOME_AI_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: HOME_AI_DEFAULT_MODEL,
+          messages: [
+            { role: 'system', content: 'Bu emaili Türkçeye çevir. Sadece çeviriyi yaz, başka açıklama ekleme. Formatı koru.' },
+            { role: 'user', content: rawText },
+          ],
+          max_tokens: 1000,
+        }),
+      });
+      const data = await resp.json();
+      setTranslatedBody(data.choices?.[0]?.message?.content || null);
+    } catch {
+      setTranslatedBody(null);
+    } finally {
+      setIsTranslating(false);
+    }
+  }, [email]);
 
   // AI Smart Reply generation
   const handleGenerateSmartReplies = useCallback(async () => {
@@ -1104,8 +1135,77 @@ export function EmailView({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
             </svg>
           </button>
+
+          {/* AI Translate button */}
+          <button
+            onClick={translatedBody ? () => setTranslatedBody(null) : handleTranslate}
+            disabled={isTranslating}
+            className={`p-2 rounded-xl transition-all disabled:opacity-50 ${translatedBody ? 'text-amber-400 bg-amber-400/10' : 'text-owl-text-secondary/40 hover:text-amber-400 hover:bg-amber-400/10'}`}
+            title={translatedBody ? 'Çeviriyi gizle' : 'Türkçeye çevir (AI)'}
+          >
+            {isTranslating ? (
+              <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/>
+              </svg>
+            )}
+          </button>
+
+          {/* Export .eml button */}
+          {email && (
+            <button
+              onClick={() => {
+                const date = email.date.toUTCString();
+                const toHeader = email.to?.map((t: {name?:string;email:string}) => t.name ? `${t.name} <${t.email}>` : t.email).join(', ') || '';
+                const eml = [
+                  `From: ${email.from.name} <${email.from.email}>`,
+                  toHeader ? `To: ${toHeader}` : '',
+                  `Subject: ${email.subject}`,
+                  `Date: ${date}`,
+                  `MIME-Version: 1.0`,
+                  `Content-Type: text/html; charset=utf-8`,
+                  ``,
+                  email.bodyHtml || email.body || email.preview,
+                ].filter(Boolean).join('\r\n');
+                const blob = new Blob([eml], { type: 'message/rfc822' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${email.subject.replace(/[^a-z0-9]/gi, '_').slice(0, 60)}.eml`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="p-2 text-owl-text-secondary/40 hover:text-indigo-400 hover:bg-indigo-400/10 rounded-xl transition-all"
+              title="Email'i .eml olarak indir"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+              </svg>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ─── TRANSLATION PANEL ─── */}
+      {translatedBody && (
+        <div className="mx-6 mb-4 rounded-xl border border-amber-400/20 bg-amber-400/5 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-amber-400/15">
+            <div className="flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-amber-400/80 uppercase tracking-wider">Türkçe Çeviri</span>
+            </div>
+            <button onClick={() => setTranslatedBody(null)} className="text-owl-text-secondary/40 hover:text-owl-text-secondary transition-colors text-xs">Kapat</button>
+          </div>
+          <div className="px-4 py-3 text-sm text-owl-text/80 leading-relaxed whitespace-pre-wrap">
+            {translatedBody}
+          </div>
+        </div>
+      )}
 
       {/* ─── AI SMART REPLY ─── */}
       {onReplyWithText && (
