@@ -173,6 +173,9 @@ function getStoredAccentTheme(): AccentTheme {
   return stored && ACCENT_THEMES[stored] ? stored : 'violet';
 }
 
+// ─── Session Start Time (for "Yeni" badge) ───────────────────────────────────
+const SESSION_START = Date.now();
+
 // ─── Search History ──────────────────────────────────────────────────────────
 const SEARCH_HISTORY_KEY = 'owlmail-search-history';
 function getSearchHistory(): string[] {
@@ -1718,9 +1721,17 @@ function MailPanel({
                           );
                         })()}
                       </div>
-                      <span className={`text-[11px] ml-2 shrink-0 tabular-nums ${isUnread ? 'text-owl-accent font-semibold' : 'text-owl-text-secondary/70'}`}>
-                        {formatDate(email.date, t, lang)}
-                      </span>
+                      <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                        {/* "Yeni" badge: unread + arrived after session start */}
+                        {isUnread && email.date.getTime() > SESSION_START && (
+                          <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-px rounded-full bg-owl-accent text-white animate-pulse">
+                            Yeni
+                          </span>
+                        )}
+                        <span className={`text-[11px] tabular-nums ${isUnread ? 'text-owl-accent font-semibold' : 'text-owl-text-secondary/70'}`}>
+                          {formatDate(email.date, t, lang)}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Row 2: Subject */}
