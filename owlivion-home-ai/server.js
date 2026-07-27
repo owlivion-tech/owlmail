@@ -1,14 +1,12 @@
 // ============================================================================
-// Owlivion Home AI Bridge
+// OwlMail Pro Home AI Bridge
 // ============================================================================
-// A tiny self-hosted service that exposes an *Ollama-compatible* HTTP API but
-// answers using headless Claude Code (`claude -p`), which authenticates with
-// your Claude Code subscription — no per-token API key, and requests stay on
-// your home network.
+// Self-hosted service that proxies AI requests to headless Claude Code
+// (`claude -p`) using your subscription — no per-token API key.
 //
-// Because it speaks the Ollama API (`/api/generate`, `/api/tags`), the Owlivion
-// Mail client reuses its existing Ollama transport unchanged; it just points
-// at this server (see src/config/homeServer.ts → HOME_AI_URL).
+// Supports two API formats so OwlMail Pro can call it directly:
+//   - Ollama:  POST /api/generate  |  GET /api/tags
+//   - OpenAI:  POST /v1/chat/completions  |  GET /v1/models
 //
 //   Run:   PORT=11500 node server.js
 //   Needs: the `claude` CLI installed and logged in on this machine.
@@ -33,6 +31,14 @@ const AVAILABLE_MODELS = ALLOWED_MODELS.map((name) => ({
   size: 0,
   modified_at: new Date().toISOString(),
   details: { family: 'claude', format: 'claude-code' },
+}));
+
+// OpenAI-format model list
+const OPENAI_MODELS = ALLOWED_MODELS.map((name) => ({
+  id: name,
+  object: 'model',
+  created: Math.floor(Date.now() / 1000),
+  owned_by: 'claude-code',
 }));
 
 /** Run one non-interactive Claude Code turn and resolve with its text output. */
@@ -115,7 +121,44 @@ const server = http.createServer(async (req, res) => {
         created_at: new Date().toISOString(),
         response,
         done: true,
-        total_duration: (Date.now() - started) * 1_000_000, // ns, Ollama-style
+        total_duration: (Date.now() - started) * 1_000_000,
+      });
+    }
+
+    // OpenAI: list models.
+    if (req.method === 'GET' && url.pathname === '/v1/models') {
+      return sendJson(res, 200, { object: 'list', data: OPENAI_MODELS });
+    }
+
+    // OpenAI: chat completions — maps messages[] → single Claude prompt.
+    if (req.method === 'POST' && url.pathname === '/v1/chat/completions') {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const model = body.model || DEFAULT_MODEL;
+      const messages = body.messages || [];
+
+      // Extract system prompt and build user prompt from message history
+      const systemMsg = messages.find((m) => m.role === 'system');
+      const userMessages = messages.filter((m) => m.role !== 'system');
+      const prompt = userMessages.map((m) => m.content).join('\n\n');
+
+      const started = Date.now();
+      const text = await runClaude({
+        model,
+        prompt,
+        system: systemMsg?.content,
+      });
+
+      return sendJson(res, 200, {
+        id: `chatcmpl-${Date.now()}`,
+        object: 'chat.completion',
+        created: Math.floor(started / 1000),
+        model,
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: text },
+          finish_reason: 'stop',
+        }],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       });
     }
 
