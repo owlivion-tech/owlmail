@@ -1,0 +1,19 @@
+[Unit]
+Description=Owlivion Home AI Bridge (Claude Code, Ollama-compatible)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust to the user that is logged into Claude Code on this machine.
+User=phantom
+WorkingDirectory=/home/phantom/owlivion-mail/owlivion-home-ai
+Environment=PORT=11500
+Environment=HOST=0.0.0.0
+Environment=DEFAULT_MODEL=sonnet
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

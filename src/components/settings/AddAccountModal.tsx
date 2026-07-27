@@ -1,0 +1,923 @@
+// ============================================================================
+// OwlMail - Add Account Modal (Thunderbird-style Auto-configuration)
+// ============================================================================
+// SECURITY HARDENED: No sensitive data in console logs
+
+import React, { useState, useEffect } from 'react';
+import { useShortcut } from '../../hooks/useKeyboardShortcuts';
+import { isMobile } from '../../hooks/usePlatform';
+import { useTranslation } from '../../i18n';
+import type { Account, AutoConfig, SecurityType } from '../../types';
+import { invoke } from '@tauri-apps/api/core';
+
+interface AutoConfigDebug {
+  email: string;
+  domain: string;
+  presetTried: boolean;
+  presetResult: string | null;
+  ispAutoconfigTried: boolean;
+  ispAutoconfigResult: string | null;
+  wellknownTried: boolean;
+  wellknownResult: string | null;
+  ispdbTried: boolean;
+  ispdbResult: string | null;
+  mxLookupTried: boolean;
+  mxLookupResult: string | null;
+  guessingTried: boolean;
+  guessingResult: string | null;
+  finalConfig: AutoConfig | null;
+  totalDurationMs: number;
+}
+
+// SECURITY: Logger wrapper - only log in development, never log sensitive data
+const log = {
+  info: (message: string) => {
+    if (import.meta.env.DEV) {
+      console.log(message);
+    }
+  },
+  error: (message: string) => {
+    if (import.meta.env.DEV) {
+      console.error(message);
+    }
+  },
+};
+
+interface AddAccountModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onAccountAdded: (account: Account) => void;
+  editAccount?: Account;
+}
+
+type Step = 'credentials' | 'detecting' | 'configure' | 'testing' | 'success' | 'error';
+
+export function AddAccountModal({
+  isOpen,
+  onClose,
+  onAccountAdded,
+  editAccount,
+}: AddAccountModalProps) {
+  const { t } = useTranslation();
+
+  // Form state
+  const [displayName, setDisplayName] = useState(editAccount?.displayName || '');
+  const [email, setEmail] = useState(editAccount?.email || '');
+  const [password, setPassword] = useState('');
+
+  // Configuration state
+  const [config, setConfig] = useState<AutoConfig | null>(null);
+  const [imapHost, setImapHost] = useState(editAccount?.imapHost || '');
+  const [imapPort, setImapPort] = useState(editAccount?.imapPort || 993);
+  const [imapSecurity, setImapSecurity] = useState<SecurityType>(editAccount?.imapSecurity || 'SSL');
+  const [smtpHost, setSmtpHost] = useState(editAccount?.smtpHost || '');
+  const [smtpPort, setSmtpPort] = useState(editAccount?.smtpPort || 587);
+  const [smtpSecurity, setSmtpSecurity] = useState<SecurityType>(editAccount?.smtpSecurity || 'STARTTLS');
+
+  // UI state
+  const [step, setStep] = useState<Step>(editAccount ? 'configure' : 'credentials');
+  const [showManual, setShowManual] = useState(!!editAccount);
+  const [error, setError] = useState('');
+  const [testProgress, setTestProgress] = useState('');
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<AutoConfigDebug | null>(null);
+  const [acceptInvalidCerts, setAcceptInvalidCerts] = useState(editAccount?.acceptInvalidCerts || false);
+
+  // Close on Escape
+  useShortcut('Escape', onClose, { enabled: isOpen && step !== 'detecting' && step !== 'testing' });
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (isOpen && !editAccount) {
+      setDisplayName('');
+      setEmail('');
+      setPassword('');
+      setConfig(null);
+      setStep('credentials');
+      setShowManual(false);
+      setError('');
+    }
+  }, [isOpen, editAccount]);
+
+  // Handle Gmail OAuth - fully automatic like Thunderbird!
+  const handleGmailOAuth = async () => {
+    try {
+      setStep('detecting');
+      setError('');
+      setTestProgress(t('settings.addAccount.openingBrowser'));
+
+      // Start OAuth flow - this will open browser and wait for callback automatically
+      const result = await invoke<{
+        email: string;
+        display_name: string | null;
+        access_token: string;
+        refresh_token: string | null;
+        imap_host: string;
+        imap_port: number;
+        smtp_host: string;
+        smtp_port: number;
+      }>('oauth_start_gmail');
+
+      // OAuth completed successfully! Fill in the form
+      setEmail(result.email);
+      setDisplayName(result.display_name || result.email.split('@')[0]);
+      setPassword(result.access_token); // OAuth token used as password
+      setImapHost(result.imap_host);
+      setImapPort(result.imap_port);
+      setImapSecurity('SSL');
+      setSmtpHost(result.smtp_host);
+      setSmtpPort(result.smtp_port);
+      setSmtpSecurity('STARTTLS');
+
+      // Auto-save the account
+      setStep('testing');
+      setTestProgress(t('settings.addAccount.savingAccount'));
+
+      const newAccount = {
+        displayName: result.display_name || result.email.split('@')[0],
+        email: result.email,
+        imapHost: result.imap_host,
+        imapPort: result.imap_port,
+        imapSecurity: 'SSL' as const,
+        smtpHost: result.smtp_host,
+        smtpPort: result.smtp_port,
+        smtpSecurity: 'STARTTLS' as const,
+        password: result.access_token,
+        acceptInvalidCerts: false,
+        isActive: true,
+        isDefault: false,
+        signature: '',
+        syncDays: 30,
+        oauthProvider: 'gmail' as const,
+        oauthRefreshToken: result.refresh_token || '',
+      };
+
+      const accountId = await invoke<string>('account_add', {
+        email: newAccount.email,
+        displayName: newAccount.displayName,
+        password: newAccount.password,
+        imapHost: newAccount.imapHost,
+        imapPort: newAccount.imapPort,
+        imapSecurity: newAccount.imapSecurity,
+        smtpHost: newAccount.smtpHost,
+        smtpPort: newAccount.smtpPort,
+        smtpSecurity: newAccount.smtpSecurity,
+        isDefault: true,
+        acceptInvalidCerts: newAccount.acceptInvalidCerts || false,
+        oauthProvider: 'gmail', // Mark this as a Gmail OAuth account
+      });
+
+      // Connect to the account immediately to establish IMAP connection with OAuth
+      setTestProgress(t('settings.addAccount.connectingImap'));
+      await invoke('account_connect', { accountId });
+
+      setStep('success');
+      setTimeout(() => {
+        onAccountAdded({
+          ...newAccount,
+          id: parseInt(accountId),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        onClose();
+      }, 1500);
+    } catch (err: any) {
+      setError(`${t('settings.addAccount.oauthFailed')} ${err}`);
+      setStep('credentials');
+    }
+  };
+
+  // Auto-detect configuration
+  const detectConfig = async () => {
+    setStep('detecting');
+    setError('');
+    setDebugInfo(null);
+
+    try {
+      // Call Tauri backend with debug mode
+      const debugResult = await invoke<AutoConfigDebug>('autoconfig_detect_debug', { email });
+      setDebugInfo(debugResult);
+
+      if (debugResult.finalConfig) {
+        const result = debugResult.finalConfig;
+        setConfig(result);
+        setImapHost(result.imapHost);
+        setImapPort(result.imapPort);
+        setImapSecurity(result.imapSecurity);
+        setSmtpHost(result.smtpHost);
+        setSmtpPort(result.smtpPort);
+        setSmtpSecurity(result.smtpSecurity);
+
+        if (result.displayName && !displayName) {
+          setDisplayName(result.displayName);
+        }
+
+        log.info('Autoconfig detected successfully');
+        setStep('configure');
+      } else {
+        throw new Error('No configuration found');
+      }
+    } catch (_err) {
+      log.error('Auto-detect failed');
+      setShowManual(true);
+      setStep('configure');
+      setError(t('settings.addAccount.autoConfigFailed'));
+    }
+  };
+
+  // Test connection and add account
+  const testAndAdd = async () => {
+    setStep('testing');
+    setError('');
+    setTestProgress(t('settings.addAccount.testingImap'));
+
+    try {
+      // Test IMAP connection
+      await invoke('account_test_imap', {
+        host: imapHost,
+        port: imapPort,
+        security: imapSecurity,
+        email,
+        password,
+      });
+
+      setTestProgress(t('settings.addAccount.testingSmtp'));
+
+      // Test SMTP connection
+      await invoke('account_test_smtp', {
+        host: smtpHost,
+        port: smtpPort,
+        security: smtpSecurity,
+        email,
+        password,
+      });
+
+      setTestProgress(t('settings.addAccount.savingAccount'));
+
+      let resultAccount: Account;
+
+      if (editAccount) {
+        // Update existing account
+        await invoke('account_update', {
+          accountId: editAccount.id.toString(),
+          email,
+          displayName,
+          password,
+          imapHost,
+          imapPort,
+          imapSecurity,
+          smtpHost,
+          smtpPort,
+          smtpSecurity,
+          isDefault: editAccount.isDefault,
+          acceptInvalidCerts,
+        });
+
+        resultAccount = {
+          ...editAccount,
+          email,
+          displayName,
+          imapHost,
+          imapPort,
+          imapSecurity,
+          smtpHost,
+          smtpPort,
+          smtpSecurity,
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        // Add new account
+        const accountId = await invoke<number>('account_add', {
+          email,
+          displayName,
+          password,
+          imapHost,
+          imapPort,
+          imapSecurity,
+          smtpHost,
+          smtpPort,
+          smtpSecurity,
+          isDefault: true,
+          acceptInvalidCerts,
+        });
+
+        resultAccount = {
+          id: accountId,
+          email,
+          displayName,
+          imapHost,
+          imapPort,
+          imapSecurity,
+          smtpHost,
+          smtpPort,
+          smtpSecurity,
+          isActive: true,
+          isDefault: true,
+          signature: '',
+          syncDays: 30,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      setStep('success');
+      setTimeout(() => {
+        onAccountAdded(resultAccount);
+      }, 1500);
+    } catch (err: any) {
+      const errorMsg = typeof err === 'string' ? err : (err.message || JSON.stringify(err));
+      console.error('Connection test error:', err);
+      setError(errorMsg || t('settings.addAccount.connectionFailed'));
+      setStep('error');
+    }
+  };
+
+  // Handle form submission
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (step === 'credentials') {
+      if (!displayName || !email || !password) {
+        setError(t('settings.addAccount.fillAllFields'));
+        return;
+      }
+
+      if (showManual) {
+        setStep('configure');
+      } else {
+        detectConfig();
+      }
+    } else if (step === 'configure') {
+      if (!imapHost || !smtpHost) {
+        setError(t('settings.addAccount.fillServerSettings'));
+        return;
+      }
+      if (editAccount && !password) {
+        setError(t('settings.addAccount.enterPassword'));
+        return;
+      }
+      testAndAdd();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const mobile = isMobile();
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className={`bg-owl-surface shadow-owl-lg overflow-hidden ${
+          mobile
+            ? 'w-full h-full flex flex-col'
+            : 'border border-owl-border rounded-xl w-full max-w-lg'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-owl-border">
+          <h2 className="text-lg font-semibold text-owl-text">
+            {editAccount ? t('settings.addAccount.editTitle') : t('settings.addAccount.addTitle')}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 text-owl-text-secondary hover:text-owl-text rounded-lg hover:bg-owl-surface-2 transition-colors"
+            disabled={step === 'detecting' || step === 'testing'}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <form onSubmit={handleSubmit} className={mobile ? 'flex-1 overflow-y-auto flex flex-col' : ''}>
+          <div className={`space-y-6 ${mobile ? 'p-4 flex-1 overflow-y-auto' : 'p-6'}`}>
+            {/* Step Indicator */}
+            {!editAccount && (
+              <div className="flex items-center justify-center gap-2 mb-4">
+                <StepDot active={step === 'credentials'} completed={step !== 'credentials'} />
+                <div className="w-8 h-px bg-owl-border" />
+                <StepDot active={step === 'detecting' || step === 'configure'} completed={step === 'testing' || step === 'success'} />
+                <div className="w-8 h-px bg-owl-border" />
+                <StepDot active={step === 'testing' || step === 'success' || step === 'error'} completed={step === 'success'} />
+              </div>
+            )}
+
+            {/* Credentials Step */}
+            {step === 'credentials' && (
+              <>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-owl-text mb-2">
+                      {t('settings.addAccount.displayName')}
+                    </label>
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder={t('settings.addAccount.displayNamePlaceholder')}
+                      className="w-full px-4 py-3 bg-owl-surface-2 border border-owl-border rounded-lg text-owl-text placeholder-owl-text-secondary focus:outline-none focus:ring-2 focus:ring-owl-accent focus:border-transparent"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-owl-text mb-2">
+                      {t('settings.addAccount.emailAddress')}
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder={t('settings.addAccount.emailPlaceholder')}
+                      className="w-full px-4 py-3 bg-owl-surface-2 border border-owl-border rounded-lg text-owl-text placeholder-owl-text-secondary focus:outline-none focus:ring-2 focus:ring-owl-accent focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-owl-text mb-2">
+                      {t('settings.addAccount.password')}
+                    </label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={t('settings.addAccount.passwordPlaceholder')}
+                      className="w-full px-4 py-3 bg-owl-surface-2 border border-owl-border rounded-lg text-owl-text placeholder-owl-text-secondary focus:outline-none focus:ring-2 focus:ring-owl-accent focus:border-transparent"
+                    />
+                    <p className="mt-2 text-xs text-owl-text-secondary">
+                      {t('settings.addAccount.gmailAppPassword')}
+                      <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="text-owl-accent hover:underline ml-1">
+                        {t('settings.addAccount.howToCreate')}
+                      </a>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Manual Config Toggle */}
+                <div className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowManual(!showManual)}
+                    className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                      showManual
+                        ? 'bg-owl-accent border-owl-accent'
+                        : 'bg-owl-surface-2 border-owl-border hover:border-owl-text-secondary'
+                    }`}
+                  >
+                    {showManual && (
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                  <label
+                    onClick={() => setShowManual(!showManual)}
+                    className="ml-2 text-sm text-owl-text-secondary cursor-pointer"
+                  >
+                    {t('settings.addAccount.manualServerSettings')}
+                  </label>
+                </div>
+
+                {/* OAuth Buttons - desktop only (mobile OAuth not yet implemented) */}
+                {!mobile && <div className="space-y-3">
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-owl-border" />
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                      <span className="px-2 bg-owl-surface text-owl-text-secondary">{t('common.or')}</span>
+                    </div>
+                  </div>
+
+                  {/* Gmail / Google Workspace */}
+                  <button
+                    type="button"
+                    className="w-full flex items-center gap-3 px-4 py-3 bg-owl-surface-2 border border-owl-border rounded-lg text-owl-text hover:bg-owl-border/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                    onClick={handleGmailOAuth}
+                    disabled={step !== 'credentials'}
+                  >
+                    <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
+                      <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.27 0 3.198 2.698 1.24 6.65l4.026 3.115Z" />
+                      <path fill="#34A853" d="M16.04 18.013c-1.09.703-2.474 1.078-4.04 1.078a7.077 7.077 0 0 1-6.723-4.823l-4.04 3.067A11.965 11.965 0 0 0 12 24c2.933 0 5.735-1.043 7.834-3l-3.793-2.987Z" />
+                      <path fill="#4A90E2" d="M19.834 21c2.195-2.048 3.62-5.096 3.62-9 0-.71-.109-1.473-.272-2.182H12v4.637h6.436c-.317 1.559-1.17 2.766-2.395 3.558L19.834 21Z" />
+                      <path fill="#FBBC05" d="M5.277 14.268A7.12 7.12 0 0 1 4.909 12c0-.782.125-1.533.357-2.235L1.24 6.65A11.934 11.934 0 0 0 0 12c0 1.92.445 3.73 1.237 5.335l4.04-3.067Z" />
+                    </svg>
+                    <div className="flex-1 text-left">
+                      <div className="font-medium">{t('settings.addAccount.gmailSignIn')}</div>
+                      <div className="text-xs text-owl-text-secondary">{t('settings.addAccount.gmailDesc')}</div>
+                    </div>
+                    <svg className="w-4 h-4 text-owl-text-secondary group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+
+                </div>}
+              </>
+            )}
+
+            {/* Detecting Step */}
+            {step === 'detecting' && (
+              <div className="py-12 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-owl-accent/20 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-owl-accent animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-owl-text mb-2">
+                  {t('settings.addAccount.detecting')}
+                </h3>
+                <p className="text-owl-text-secondary">
+                  {email} {t('settings.addAccount.detectingFor')}
+                </p>
+              </div>
+            )}
+
+            {/* Configure Step */}
+            {step === 'configure' && (
+              <div className="space-y-6">
+                {/* Password field for edit mode */}
+                {editAccount && (
+                  <div>
+                    <label className="block text-sm font-medium text-owl-text mb-2">
+                      {t('settings.addAccount.reenterPassword')}
+                    </label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={t('settings.addAccount.passwordPlaceholder')}
+                      className="w-full px-4 py-3 bg-owl-surface-2 border border-owl-border rounded-lg text-owl-text placeholder-owl-text-secondary focus:outline-none focus:ring-2 focus:ring-owl-accent focus:border-transparent"
+                    />
+                    <p className="mt-2 text-xs text-owl-text-secondary">
+                      {t('settings.addAccount.reenterPasswordDesc')}
+                    </p>
+                  </div>
+                )}
+
+                {/* Detected Provider */}
+                {config && (
+                  <div className={`flex items-center gap-3 p-3 rounded-lg ${
+                    config.provider
+                      ? 'bg-owl-success/10 border border-owl-success/20'
+                      : 'bg-owl-warning/10 border border-owl-warning/20'
+                  }`}>
+                    <svg className={`w-5 h-5 ${config.provider ? 'text-owl-success' : 'text-owl-warning'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className={`text-sm ${config.provider ? 'text-owl-success' : 'text-owl-warning'}`}>
+                      {config.provider
+                        ? `${config.provider} ${t('settings.addAccount.settingsDetected')}`
+                        : `${t('settings.addAccount.settingsGuessed')} (${config.detectionMethod || 'guessed'})`}
+                    </span>
+                  </div>
+                )}
+
+                {/* IMAP Settings */}
+                <div>
+                  <h4 className="text-sm font-medium text-owl-text mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-owl-accent"></span>
+                    {t('settings.addAccount.incomingServer')}
+                  </h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                      <input
+                        type="text"
+                        value={imapHost}
+                        onChange={(e) => setImapHost(e.target.value)}
+                        placeholder={t('settings.addAccount.imapPlaceholder')}
+                        className="w-full px-4 py-2.5 bg-owl-surface-2 border border-owl-border rounded-lg text-owl-text placeholder-owl-text-secondary focus:outline-none focus:ring-2 focus:ring-owl-accent text-sm"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="number"
+                        value={imapPort}
+                        onChange={(e) => setImapPort(parseInt(e.target.value))}
+                        placeholder="993"
+                        className="w-full px-4 py-2.5 bg-owl-surface-2 border border-owl-border rounded-lg text-owl-text placeholder-owl-text-secondary focus:outline-none focus:ring-2 focus:ring-owl-accent text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <select
+                      value={imapSecurity}
+                      onChange={(e) => setImapSecurity(e.target.value as SecurityType)}
+                      className="w-full px-4 py-2.5 bg-owl-bg border border-owl-border rounded-lg focus:outline-none focus:ring-2 focus:ring-owl-accent text-sm text-owl-text appearance-none cursor-pointer"
+                    >
+                      <option value="SSL" className="bg-owl-bg text-owl-text">{t('settings.addAccount.sslTls')}</option>
+                      <option value="STARTTLS" className="bg-owl-bg text-owl-text">{t('settings.addAccount.starttls')}</option>
+                      <option value="NONE" className="bg-owl-bg text-owl-text">{t('settings.addAccount.noEncryption')}</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* SMTP Settings */}
+                <div>
+                  <h4 className="text-sm font-medium text-owl-text mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-owl-accent"></span>
+                    {t('settings.addAccount.outgoingServer')}
+                  </h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                      <input
+                        type="text"
+                        value={smtpHost}
+                        onChange={(e) => setSmtpHost(e.target.value)}
+                        placeholder={t('settings.addAccount.smtpPlaceholder')}
+                        className="w-full px-4 py-2.5 bg-owl-surface-2 border border-owl-border rounded-lg text-owl-text placeholder-owl-text-secondary focus:outline-none focus:ring-2 focus:ring-owl-accent text-sm"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="number"
+                        value={smtpPort}
+                        onChange={(e) => setSmtpPort(parseInt(e.target.value))}
+                        placeholder="587"
+                        className="w-full px-4 py-2.5 bg-owl-surface-2 border border-owl-border rounded-lg text-owl-text placeholder-owl-text-secondary focus:outline-none focus:ring-2 focus:ring-owl-accent text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <select
+                      value={smtpSecurity}
+                      onChange={(e) => setSmtpSecurity(e.target.value as SecurityType)}
+                      className="w-full px-4 py-2.5 bg-owl-bg border border-owl-border rounded-lg focus:outline-none focus:ring-2 focus:ring-owl-accent text-sm text-owl-text appearance-none cursor-pointer"
+                    >
+                      <option value="STARTTLS" className="bg-owl-bg text-owl-text">{t('settings.addAccount.starttls')}</option>
+                      <option value="SSL" className="bg-owl-bg text-owl-text">{t('settings.addAccount.sslTls')}</option>
+                      <option value="NONE" className="bg-owl-bg text-owl-text">{t('settings.addAccount.noEncryption')}</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* SSL Certificate Settings */}
+                <div className="border-t border-owl-border pt-4">
+                  <div className="flex items-start gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setAcceptInvalidCerts(!acceptInvalidCerts)}
+                      className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                        acceptInvalidCerts
+                          ? 'bg-owl-warning border-owl-warning'
+                          : 'bg-owl-surface-2 border-owl-border hover:border-owl-text-secondary'
+                      }`}
+                    >
+                      {acceptInvalidCerts && (
+                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                    <div className="flex-1">
+                      <label
+                        onClick={() => setAcceptInvalidCerts(!acceptInvalidCerts)}
+                        className="text-sm font-medium text-owl-text cursor-pointer"
+                      >
+                        {t('settings.addAccount.acceptInvalidCerts')}
+                      </label>
+                      <p className="text-xs text-owl-text-secondary mt-1">
+                        {t('settings.addAccount.acceptInvalidCertsDesc')}
+                        <span className="text-owl-warning"> {t('settings.addAccount.securityWarning')}</span>
+                      </p>
+                      <div className="mt-2 text-xs text-owl-text-secondary bg-owl-surface-2 rounded p-2 border border-owl-border">
+                        <p className="font-medium mb-1">{t('settings.addAccount.whenToUse')}</p>
+                        <ul className="list-disc list-inside space-y-0.5 ml-1">
+                          <li>{t('settings.addAccount.sharedHosting')}</li>
+                          <li>{t('settings.addAccount.selfSignedCerts')}</li>
+                          <li>{t('settings.addAccount.localTestServers')}</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Debug Info Toggle */}
+                {debugInfo && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowDebug(!showDebug)}
+                      className="flex items-center gap-2 text-sm text-owl-text-secondary hover:text-owl-accent transition-colors"
+                    >
+                      <svg className={`w-4 h-4 transition-transform ${showDebug ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      {t('settings.addAccount.debugDetails')} ({debugInfo.totalDurationMs}ms)
+                    </button>
+
+                    {showDebug && (
+                      <div className="mt-3 space-y-2 text-xs">
+                        <DebugStep
+                          title="1. Built-in Presets"
+                          tried={debugInfo.presetTried}
+                          result={debugInfo.presetResult}
+                        />
+                        <DebugStep
+                          title="2. ISP Autoconfig"
+                          tried={debugInfo.ispAutoconfigTried}
+                          result={debugInfo.ispAutoconfigResult}
+                        />
+                        <DebugStep
+                          title="3. Well-known URL"
+                          tried={debugInfo.wellknownTried}
+                          result={debugInfo.wellknownResult}
+                        />
+                        <DebugStep
+                          title="4. Mozilla ISPDB"
+                          tried={debugInfo.ispdbTried}
+                          result={debugInfo.ispdbResult}
+                        />
+                        <DebugStep
+                          title="5. MX Lookup"
+                          tried={debugInfo.mxLookupTried}
+                          result={debugInfo.mxLookupResult}
+                        />
+                        <DebugStep
+                          title="6. Smart Guessing"
+                          tried={debugInfo.guessingTried}
+                          result={debugInfo.guessingResult}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Testing Step */}
+            {step === 'testing' && (
+              <div className="py-12 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-owl-accent/20 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-owl-accent animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-owl-text mb-2">
+                  {t('settings.addAccount.testingConnection')}
+                </h3>
+                <p className="text-owl-text-secondary">
+                  {testProgress}
+                </p>
+              </div>
+            )}
+
+            {/* Success Step */}
+            {step === 'success' && (
+              <div className="py-8 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-owl-success/20 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-owl-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-owl-text mb-2">
+                  {t('settings.addAccount.accountAdded')}
+                </h3>
+                <p className="text-owl-text-secondary mb-4">
+                  {email} {t('settings.addAccount.accountReady')}
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setTestProgress(t('settings.addAccount.sendingTestEmail'));
+                    try {
+                      await invoke('send_test_email', {
+                        host: smtpHost,
+                        port: smtpPort,
+                        security: smtpSecurity,
+                        email,
+                        password,
+                        toEmail: email,
+                      });
+                      setTestProgress(t('settings.addAccount.testEmailSent'));
+                    } catch (err: any) {
+                      setTestProgress(`${t('common.error')}: ${err.message || err}`);
+                    }
+                  }}
+                  className="px-4 py-2 bg-owl-surface-2 hover:bg-owl-border text-owl-text rounded-lg transition-colors text-sm"
+                >
+                  {t('settings.addAccount.sendTestEmail')}
+                </button>
+                {testProgress && (
+                  <p className="mt-3 text-sm text-owl-text-secondary">{testProgress}</p>
+                )}
+              </div>
+            )}
+
+            {/* Error Step */}
+            {step === 'error' && (
+              <div className="py-8 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-owl-error/20 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-owl-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-owl-text mb-2">
+                  {t('settings.addAccount.connectionFailed')}
+                </h3>
+                <p className="text-owl-error text-sm mb-4">
+                  {error}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setStep('configure')}
+                  className="text-owl-accent hover:underline text-sm"
+                >
+                  {t('settings.addAccount.editSettings')}
+                </button>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {error && step !== 'error' && (
+              <div className="p-3 bg-owl-error/10 border border-owl-error/20 rounded-lg">
+                <p className="text-sm text-owl-error">{error}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          {(step === 'credentials' || step === 'configure') && (
+            <div className={`${mobile ? 'px-4' : 'px-6'} py-4 border-t border-owl-border bg-owl-surface-2/50 flex justify-end gap-3`}>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 text-owl-text-secondary hover:text-owl-text hover:bg-owl-surface rounded-lg transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2.5 bg-owl-accent hover:bg-owl-accent-hover text-white font-medium rounded-lg transition-colors"
+              >
+                {step === 'credentials' ? (showManual ? t('settings.addAccount.continue') : t('settings.addAccount.detectSettings')) : t('settings.addAccount.testConnection')}
+              </button>
+            </div>
+          )}
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Step indicator dot
+function StepDot({ active, completed }: { active: boolean; completed: boolean }) {
+  return (
+    <div
+      className={`w-3 h-3 rounded-full transition-colors ${
+        completed
+          ? 'bg-owl-success'
+          : active
+          ? 'bg-owl-accent'
+          : 'bg-owl-border'
+      }`}
+    />
+  );
+}
+
+// Debug step component
+function DebugStep({ title, tried, result }: { title: string; tried: boolean; result: string | null }) {
+  const getIcon = () => {
+    if (!tried) return '⏭';
+    if (result === 'SUCCESS') return '✅';
+    if (result === 'NOT_FOUND') return '⚠️';
+    return '❌';
+  };
+
+  const getColor = () => {
+    if (!tried) return 'text-owl-text-secondary opacity-50';
+    if (result === 'SUCCESS') return 'text-owl-success';
+    if (result === 'NOT_FOUND') return 'text-owl-warning';
+    return 'text-owl-error';
+  };
+
+  return (
+    <div className={`p-2 rounded border ${
+      !tried
+        ? 'bg-owl-bg border-owl-border opacity-50'
+        : result === 'SUCCESS'
+        ? 'bg-owl-success/5 border-owl-success/20'
+        : result === 'NOT_FOUND'
+        ? 'bg-owl-warning/5 border-owl-warning/20'
+        : 'bg-owl-error/5 border-owl-error/20'
+    }`}>
+      <div className="flex items-center gap-2">
+        <span>{getIcon()}</span>
+        <span className={`flex-1 ${getColor()} font-mono`}>{title}</span>
+      </div>
+      {result && result !== 'SUCCESS' && result !== 'NOT_FOUND' && (
+        <p className="text-[10px] text-owl-error mt-1 ml-6 font-mono truncate" title={result}>
+          {result}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default AddAccountModal;

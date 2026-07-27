@@ -1,0 +1,1755 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Owlivion Mail - Akıllı, Güvenli, Özgür E-posta</title>
+    <meta name="description" content="AI destekli, gizlilik odaklı masaüstü e-posta istemcisi. Phishing tespiti, takip engelleme, şifreli depolama.">
+    <link rel="icon" href="favicon.ico">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --accent: #6366f1;
+            --accent-glow: #818cf8;
+            --accent-secondary: #a855f7;
+            --text-primary: #f4f4f5;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            --border: rgba(255,255,255,0.08);
+            --glass: rgba(255,255,255,0.03);
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Animated Background */
+        .bg-gradient {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .bg-gradient::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(99, 102, 241, 0.05) 0%, transparent 70%);
+            animation: bgFloat 20s ease-in-out infinite;
+        }
+
+        @keyframes bgFloat {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            25% { transform: translate(2%, 2%) rotate(1deg); }
+            50% { transform: translate(-1%, 3%) rotate(-1deg); }
+            75% { transform: translate(3%, -2%) rotate(2deg); }
+        }
+
+        /* Noise Overlay */
+        .noise {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            opacity: 0.02;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+        }
+
+        /* Grid Pattern */
+        .grid-pattern {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 1rem 2rem;
+            transition: all 0.3s ease;
+        }
+
+        nav.scrolled {
+            background: rgba(10, 10, 15, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .nav-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            position: relative;
+        }
+
+        .logo-icon svg,
+        .logo-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-glow));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+            position: relative;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .nav-links a::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: var(--accent);
+            transition: width 0.3s ease;
+        }
+
+        .nav-links a:hover::after {
+            width: 100%;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            color: white;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, transparent, rgba(255,255,255,0.2));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .btn-primary:hover::before {
+            opacity: 1;
+        }
+
+        .btn-secondary {
+            background: var(--glass);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.15);
+        }
+
+        .btn-large {
+            padding: 1rem 2rem;
+            font-size: 1rem;
+            border-radius: 16px;
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8rem 2rem 4rem;
+            position: relative;
+        }
+
+        .hero-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 3rem;
+        }
+
+        .hero-brand {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .hero-logo {
+            width: 180px;
+            height: 180px;
+            object-fit: contain;
+            filter: drop-shadow(0 0 60px rgba(99, 102, 241, 0.4));
+            animation: logoFloat 6s ease-in-out infinite;
+        }
+
+        @keyframes logoFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .hero-title {
+            font-size: 4rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+        }
+
+        .hero-tagline {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            line-height: 1.7;
+        }
+
+        .hero-text {
+            position: relative;
+            z-index: 2;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .hero-badge .dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 1.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .hero h1 .gradient {
+            background: linear-gradient(135deg, var(--accent-glow), var(--accent-secondary), #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            background-size: 200% 200%;
+            animation: gradientShift 5s ease infinite;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            max-width: 500px;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .hero-stats {
+            display: flex;
+            gap: 3rem;
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .stat {
+            text-align: left;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        /* Hero Visual */
+        .hero-visual {
+            position: relative;
+        }
+
+        /* MacBook Pro Mockup */
+        .laptop-frame {
+            position: relative;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .laptop-mockup {
+            position: relative;
+            width: 100%;
+        }
+
+        .laptop-mockup img.mockup-frame {
+            width: 100%;
+            height: auto;
+            display: block;
+            filter: drop-shadow(0 50px 100px rgba(0,0,0,0.5));
+        }
+
+        .laptop-screen {
+            position: absolute;
+            top: 5.8%;
+            left: 11.8%;
+            width: 76.4%;
+            height: 78%;
+            overflow: hidden;
+            border-radius: 4px;
+            background: var(--bg-primary);
+        }
+
+        .laptop-screen .app-window {
+            width: 100%;
+            height: 100%;
+            border-radius: 0;
+        }
+
+        .app-preview {
+            position: relative;
+        }
+
+        .app-window {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+            box-shadow: none;
+        }
+
+        .app-titlebar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .titlebar-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .titlebar-dot.red { background: #ff5f57; }
+        .titlebar-dot.yellow { background: #ffbd2e; }
+        .titlebar-dot.green { background: #28c840; }
+
+        .app-body {
+            display: grid;
+            grid-template-columns: 200px 250px 1fr;
+            height: 400px;
+        }
+
+        .app-sidebar {
+            background: var(--bg-tertiary);
+            border-right: 1px solid var(--border);
+            padding: 16px;
+        }
+
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+            transition: all 0.2s;
+        }
+
+        .sidebar-item.active {
+            background: var(--accent);
+            color: white;
+        }
+
+        .sidebar-icon {
+            width: 18px;
+            height: 18px;
+            opacity: 0.7;
+        }
+
+        .app-list {
+            border-right: 1px solid var(--border);
+            padding: 8px;
+            overflow: hidden;
+        }
+
+        .email-item {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .email-item:hover {
+            background: var(--glass);
+        }
+
+        .email-item.active {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .email-from {
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .email-subject {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .email-preview {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .app-content {
+            padding: 20px;
+            background: var(--bg-primary);
+        }
+
+        .content-header {
+            margin-bottom: 16px;
+        }
+
+        .content-from {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .content-subject {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Floating Elements */
+        .floating-card {
+            position: absolute;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-10px) rotate(1deg); }
+        }
+
+        .floating-card.ai {
+            top: 10%;
+            right: -60px;
+            animation-delay: 0s;
+        }
+
+        .floating-card.security {
+            bottom: 20%;
+            right: -40px;
+            animation-delay: 2s;
+        }
+
+        .floating-card.tracking {
+            bottom: 5%;
+            left: -30px;
+            animation-delay: 4s;
+        }
+
+        .card-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
+        }
+
+        .card-icon.purple { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+        .card-icon.green { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+        .card-icon.orange { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+
+        .card-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .card-desc {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        /* Features Section */
+        .features {
+            padding: 8rem 2rem;
+            position: relative;
+        }
+
+        .section-header {
+            text-align: center;
+            max-width: 600px;
+            margin: 0 auto 4rem;
+        }
+
+        .section-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 100px;
+            font-size: 0.85rem;
+            color: var(--accent-glow);
+            margin-bottom: 1rem;
+        }
+
+        .section-header h2 {
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .section-header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        /* Bento Grid */
+        .bento-grid {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(2, auto);
+            gap: 1.5rem;
+        }
+
+        .bento-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 2rem;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s ease;
+        }
+
+        .bento-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), transparent);
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .bento-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(99, 102, 241, 0.3);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+
+        .bento-card:hover::before {
+            opacity: 1;
+        }
+
+        .bento-card.large {
+            grid-column: span 2;
+        }
+
+        .bento-card.tall {
+            grid-row: span 2;
+        }
+
+        .bento-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .bento-icon.purple { background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(99, 102, 241, 0.2)); }
+        .bento-icon.green { background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.2)); }
+        .bento-icon.orange { background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2)); }
+        .bento-icon.blue { background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(99, 102, 241, 0.2)); }
+
+        .bento-card h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .bento-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .bento-visual {
+            margin-top: 1.5rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Feature Highlights */
+        .feature-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .feature-check {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(34, 197, 94, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--success);
+            flex-shrink: 0;
+        }
+
+        /* Code Block */
+        .code-block {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            overflow-x: auto;
+        }
+
+        .code-line {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .code-number {
+            color: var(--text-muted);
+            user-select: none;
+        }
+
+        .code-content {
+            color: var(--text-secondary);
+        }
+
+        .code-keyword { color: #c678dd; }
+        .code-string { color: #98c379; }
+        .code-comment { color: #5c6370; }
+
+        /* Download Section */
+        .download {
+            padding: 8rem 2rem;
+            position: relative;
+        }
+
+        .download-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .download-card {
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+            border: 1px solid var(--border);
+            border-radius: 32px;
+            padding: 4rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .download-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        }
+
+        .download h2 {
+            font-size: clamp(2rem, 4vw, 2.5rem);
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .download p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+        }
+
+        .download-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .download-btn {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem 1.5rem;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            color: var(--text-primary);
+            text-decoration: none;
+            transition: all 0.3s;
+            min-width: 200px;
+        }
+
+        .download-btn:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .download-btn svg {
+            width: 32px;
+            height: 32px;
+        }
+
+        .download-btn .text {
+            text-align: left;
+        }
+
+        .download-btn .label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .download-btn .platform {
+            font-weight: 600;
+        }
+
+        /* Footer */
+        footer {
+            padding: 4rem 2rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .footer-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .footer-copy {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .hero-content {
+                text-align: center;
+            }
+
+            .hero-logo {
+                width: 120px;
+                height: 120px;
+            }
+
+            .hero-title {
+                font-size: 2.5rem;
+            }
+
+            .hero-visual {
+                order: 2;
+            }
+
+            .hero p {
+                margin-left: auto;
+                margin-right: auto;
+            }
+
+            .hero-buttons {
+                justify-content: center;
+            }
+
+            .hero-stats {
+                justify-content: center;
+            }
+
+            .bento-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .bento-card.large {
+                grid-column: span 1;
+            }
+
+            .app-body {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+
+            .app-sidebar, .app-list {
+                display: none;
+            }
+
+            .floating-card {
+                display: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+
+            .hero {
+                padding: 6rem 1rem 2rem;
+            }
+
+            .features, .download {
+                padding: 4rem 1rem;
+            }
+
+            .download-card {
+                padding: 2rem;
+            }
+
+            .footer-container {
+                flex-direction: column;
+                gap: 1.5rem;
+                text-align: center;
+            }
+        }
+
+        /* Scroll Animations */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .reveal.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Cursor Glow Effect */
+        .cursor-glow {
+            position: fixed;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15), transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+            transform: translate(-50%, -50%);
+            transition: opacity 0.3s;
+        }
+
+        /* Platform Download Buttons */
+        .platform-downloads {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem;
+        }
+
+        .platform-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .platform-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .platform-btn svg {
+            opacity: 0.8;
+        }
+
+        /* GitHub Star Button */
+        .github-star {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: all 0.3s ease;
+            margin-bottom: 2rem;
+        }
+
+        .github-star:hover {
+            background: rgba(255,255,255,0.1);
+            color: var(--text-primary);
+        }
+
+        .github-star .star-icon {
+            font-size: 1rem;
+        }
+
+        /* Supported Providers */
+        .supported-providers {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .providers-label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .provider-icons {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .provider {
+            width: 32px;
+            height: 32px;
+            padding: 6px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            transition: all 0.3s ease;
+        }
+
+        .provider:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            transform: scale(1.1);
+        }
+
+        .provider svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .provider-more {
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 4rem 2rem 2rem;
+            margin-top: 4rem;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 3rem;
+        }
+
+        .footer-brand {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .footer-brand .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .footer-brand .logo img {
+            object-fit: contain;
+            width: 40px;
+            height: 40px;
+        }
+
+        .footer-brand .logo span {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .footer-brand p {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            line-height: 1.6;
+        }
+
+        .footer-section h4 {
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .footer-section ul {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .footer-section a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: color 0.3s;
+        }
+
+        .footer-section a:hover {
+            color: var(--accent);
+        }
+
+        .footer-social {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .footer-social a {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            transition: all 0.3s;
+        }
+
+        .footer-social a:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        .footer-bottom {
+            max-width: 1200px;
+            margin: 3rem auto 0;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .footer-bottom p {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .footer-badges {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .footer-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .footer-badge svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        @media (max-width: 768px) {
+            .footer-content {
+                grid-template-columns: 1fr;
+                text-align: center;
+            }
+
+            .footer-brand {
+                align-items: center;
+            }
+
+            .footer-social {
+                justify-content: center;
+            }
+
+            .footer-bottom {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .platform-downloads {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .platform-btn {
+                width: 100%;
+                max-width: 200px;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    <div class="noise"></div>
+    <div class="grid-pattern"></div>
+    <div class="cursor-glow" id="cursorGlow"></div>
+
+    <!-- Navigation -->
+    <nav id="navbar">
+        <div class="nav-container">
+            <a href="/" class="logo">
+                <div class="logo-icon">
+                    <img src="logo.png" alt="Owlivion Logo">
+                </div>
+                <span class="logo-text">Owlivion</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features">Özellikler</a>
+                <a href="#download">İndir</a>
+                <a href="https://github.com/babafpv/owlivion-mail" target="_blank">GitHub</a>
+                <a href="#" class="btn btn-primary">Başla</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <!-- Centered Brand -->
+            <div class="hero-brand reveal">
+                <img src="logo.png" alt="Owlivion Mail" class="hero-logo">
+                <h1 class="hero-title">Owlivion <span class="gradient">Mail</span></h1>
+                <p class="hero-tagline">
+                    Phishing saldırılarını tespit eden, takip piksellerini engelleyen,
+                    gizliliğinizi koruyan akıllı e-posta istemcisi. Tamamen ücretsiz.
+                </p>
+                <!-- Platform Download Buttons -->
+                <div class="platform-downloads">
+                    <a href="#download" class="platform-btn" style="opacity:1;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139z"/>
+                        </svg>
+                        <span>Linux</span>
+                    </a>
+                </div>
+
+                <!-- GitHub Star -->
+                <a href="https://github.com/babafpv/owlivion-mail" class="github-star" target="_blank">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+                    </svg>
+                    <span>GitHub'da Yıldızla</span>
+                    <span class="star-icon">⭐</span>
+                </a>
+
+                <!-- Supported Providers -->
+                <div class="supported-providers">
+                    <span class="providers-label">Desteklenen servisler:</span>
+                    <div class="provider-icons">
+                        <div class="provider" title="Gmail"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/></svg></div>
+                        <div class="provider" title="Outlook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 7.387v10.478c0 .566-.299.96-.747 1.104l-9.52 3.067c-.074.029-.163.043-.24.043-.08 0-.163-.014-.24-.046l-9.52-3.064C3.299 18.82 3 18.43 3 17.865V7.387L12.75 4.32c.16-.052.34-.052.5 0L24 7.387zM11.25 17.79V9.544L3.75 7.014v9.664l7.5 2.413v-1.3zM12.75 9.544v8.245l7.5-2.413V7.014l-7.5 2.53z"/></svg></div>
+                        <div class="provider" title="Yahoo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.998 0c-3.609 0-6.758 1.984-8.414 4.926h4.108c.086-.206.195-.39.297-.578.204-.378.595-.702 1.005-.782.41-.082.936.035 1.26.258.323.222.495.555.59.935.073.291.123.579.123.868 0 1.056-.522 2.032-1.277 2.725-.753.691-1.692 1.137-2.587 1.566-.893.43-1.748.849-2.371 1.485-.624.637-.985 1.488-.985 2.612v.492h7.56v3.028H.994v-3.52c0-2.078.679-3.655 1.808-4.847 1.13-1.193 2.584-2.006 3.915-2.747 1.33-.74 2.557-1.412 3.352-2.333.794-.922 1.153-2.043 1.153-3.577 0-.574-.085-1.153-.248-1.693-.164-.541-.426-1.043-.789-1.456-.364-.413-.83-.74-1.41-.935C8.194.086 7.514 0 6.748 0H11.998zm.004 24c3.609 0 6.758-1.984 8.414-4.926h-4.108c-.086.206-.195.39-.297.578-.204.378-.595.702-1.005.782-.41.082-.936-.035-1.26-.258-.323-.222-.495-.555-.59-.935-.073-.291-.123-.579-.123-.868 0-1.056.522-2.032 1.277-2.725.753-.691 1.692-1.137 2.587-1.566.893-.43 1.748-.849 2.371-1.485.624-.637.985-1.488.985-2.612v-.492h-7.56V5.465h12.313v3.52c0 2.078-.679 3.655-1.808 4.847-1.13 1.193-2.584 2.006-3.915 2.747-1.33.74-2.557 1.412-3.352 2.333-.794.922-1.153 2.043-1.153 3.577 0 .574.085 1.153.248 1.693.164.541.426 1.043.789 1.456.364.413.83.74 1.41.935.581.195 1.261.28 2.027.28H12.002z"/></svg></div>
+                        <div class="provider" title="iCloud"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.762 4.29a6.51 6.51 0 0 0-5.669 3.332 3.571 3.571 0 0 0-1.558-.36 3.571 3.571 0 0 0-3.516 3A4.918 4.918 0 0 0 0 14.796a4.918 4.918 0 0 0 4.92 4.914h13.16a5.885 5.885 0 0 0 5.92-5.886 5.89 5.89 0 0 0-5.195-5.833 6.51 6.51 0 0 0-5.043-3.7z"/></svg></div>
+                        <div class="provider" title="Yandex"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.04 12c0-5.523 4.476-10 10-10 5.522 0 10 4.477 10 10s-4.478 10-10 10c-5.524 0-10-4.477-10-10zm10-8c-4.418 0-8 3.582-8 8s3.582 8 8 8 8-3.582 8-8-3.582-8-8-8zm-.5 3h1.5v6.5l3 3-1.06 1.06L11.54 14V7z"/></svg></div>
+                        <div class="provider" title="ProtonMail"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l7.5 3.75L12 11.68 4.5 7.93 12 4.18zM4 9.39l7 3.5v7.22l-7-3.5V9.39zm9 10.72v-7.22l7-3.5v7.22l-7 3.5z"/></svg></div>
+                        <div class="provider-more">+40</div>
+                    </div>
+                </div>
+
+                <div class="hero-buttons" style="justify-content: center; margin-top: 1rem;">
+                    <a href="https://github.com/babafpv/owlivion-mail" class="btn btn-secondary btn-large" target="_blank">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+                        </svg>
+                        Kaynak Kod
+                    </a>
+                </div>
+                <div class="hero-stats" style="justify-content: center;">
+                    <div class="stat">
+                        <div class="stat-value">100%</div>
+                        <div class="stat-label">Ücretsiz & Açık Kaynak</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">40+</div>
+                        <div class="stat-label">Desteklenen Sağlayıcı</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">AES-256</div>
+                        <div class="stat-label">Şifreleme</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-visual reveal" style="width: 100%; max-width: 900px;">
+                <div class="laptop-frame">
+                    <div class="laptop-mockup">
+                        <img src="macbook.png" alt="MacBook Pro" class="mockup-frame">
+                        <div class="laptop-screen">
+                            <div class="app-window">
+                        <div class="app-titlebar">
+                            <div class="titlebar-dot red"></div>
+                            <div class="titlebar-dot yellow"></div>
+                            <div class="titlebar-dot green"></div>
+                        </div>
+                        <div class="app-body">
+                            <div class="app-sidebar">
+                                <div class="sidebar-item active">
+                                    <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+                                        <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+                                    </svg>
+                                    Gelen Kutusu
+                                </div>
+                                <div class="sidebar-item">
+                                    <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="22" y1="2" x2="11" y2="13"/>
+                                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                                    </svg>
+                                    Gönderilenler
+                                </div>
+                                <div class="sidebar-item">
+                                    <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                    </svg>
+                                    Yıldızlı
+                                </div>
+                            </div>
+                            <div class="app-list">
+                                <div class="email-item active">
+                                    <div class="email-from">Banka Bildirimi</div>
+                                    <div class="email-subject">Hesap aktiviteniz hk.</div>
+                                    <div class="email-preview">⚠️ Phishing tespit edildi</div>
+                                </div>
+                                <div class="email-item">
+                                    <div class="email-from">GitHub</div>
+                                    <div class="email-subject">New release available</div>
+                                    <div class="email-preview">Owlivion v1.0.1...</div>
+                                </div>
+                                <div class="email-item">
+                                    <div class="email-from">Newsletter</div>
+                                    <div class="email-subject">Haftalık bülten</div>
+                                    <div class="email-preview">📧 Takip engellendi</div>
+                                </div>
+                            </div>
+                            <div class="app-content">
+                                <div class="content-header">
+                                    <div class="content-from">Banka Bildirimi &lt;alert@suspicious-bank.xyz&gt;</div>
+                                    <div class="content-subject">Hesap aktiviteniz hakkında acil bildirim</div>
+                                </div>
+                            </div>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                </div>
+
+                    <!-- Floating Cards -->
+                    <div class="floating-card ai">
+                        <div class="card-icon purple">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5"/>
+                                <path d="M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
+                        <div class="card-title">AI Analiz</div>
+                        <div class="card-desc">Phishing %94 olasılık</div>
+                    </div>
+
+                    <div class="floating-card security">
+                        <div class="card-icon green">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                                <polyline points="9,12 12,15 16,10"/>
+                            </svg>
+                        </div>
+                        <div class="card-title">Şifreli</div>
+                        <div class="card-desc">AES-256-GCM</div>
+                    </div>
+
+                    <div class="floating-card tracking">
+                        <div class="card-icon orange">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M2 12C3.27 7.94 7.52 5 12 5c4.48 0 8.73 2.94 10 7-1.27 4.06-5.52 7-10 7-4.48 0-8.73-2.94-10-7z"/>
+                                <line x1="2" y1="2" x2="22" y2="22" stroke-width="2.5"/>
+                            </svg>
+                        </div>
+                        <div class="card-title">Takip Engeli</div>
+                        <div class="card-desc">3 piksel bloklandı</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="section-header reveal">
+            <div class="section-badge">Özellikler</div>
+            <h2>Gizliliğiniz için tasarlandı</h2>
+            <p>Modern tehditlerden koruyan, yapay zeka destekli güvenlik özellikleri</p>
+        </div>
+
+        <div class="bento-grid">
+            <div class="bento-card large reveal">
+                <div class="bento-icon purple">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                        <path d="M2 17l10 5 10-5"/>
+                        <path d="M2 12l10 5 10-5"/>
+                    </svg>
+                </div>
+                <h3>AI Phishing Tespiti</h3>
+                <p>Gemini AI ile gerçek zamanlı analiz. Şüpheli gönderenler, sahte linkler ve dolandırıcılık girişimleri anında tespit edilir.</p>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <span class="feature-check">✓</span>
+                        Gönderen doğrulama
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-check">✓</span>
+                        Link analizi
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-check">✓</span>
+                        İçerik değerlendirme
+                    </div>
+                </div>
+            </div>
+
+            <div class="bento-card reveal">
+                <div class="bento-icon orange">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M2 12C3.27 7.94 7.52 5 12 5c4.48 0 8.73 2.94 10 7-1.27 4.06-5.52 7-10 7-4.48 0-8.73-2.94-10-7z"/>
+                    </svg>
+                </div>
+                <h3>Takip Engelleme</h3>
+                <p>60+ pazarlama servisi tanınır. Mailchimp, SendGrid, HubSpot ve daha fazlası.</p>
+            </div>
+
+            <div class="bento-card tall reveal">
+                <div class="bento-icon green">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                </div>
+                <h3>Uçtan Uca Güvenlik</h3>
+                <p>Şifreleriniz AES-256-GCM ile şifrelenir. HKDF anahtar türetme. Bellekten otomatik silme.</p>
+                <div class="bento-visual">
+                    <div class="code-block">
+                        <div class="code-line">
+                            <span class="code-number">1</span>
+                            <span class="code-content"><span class="code-keyword">const</span> encryption = {</span>
+                        </div>
+                        <div class="code-line">
+                            <span class="code-number">2</span>
+                            <span class="code-content">  algorithm: <span class="code-string">"AES-256-GCM"</span>,</span>
+                        </div>
+                        <div class="code-line">
+                            <span class="code-number">3</span>
+                            <span class="code-content">  keyDerivation: <span class="code-string">"HKDF"</span>,</span>
+                        </div>
+                        <div class="code-line">
+                            <span class="code-number">4</span>
+                            <span class="code-content">  zeroize: <span class="code-keyword">true</span></span>
+                        </div>
+                        <div class="code-line">
+                            <span class="code-number">5</span>
+                            <span class="code-content">};</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bento-card reveal">
+                <div class="bento-icon blue">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                        <polyline points="22,6 12,13 2,6"/>
+                    </svg>
+                </div>
+                <h3>40+ E-posta Sağlayıcı</h3>
+                <p>Gmail, Outlook, Yahoo, iCloud, Yandex ve daha fazlası. Otomatik yapılandırma.</p>
+            </div>
+
+            <div class="bento-card large reveal">
+                <div class="bento-icon purple">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                </div>
+                <h3>AI Yanıt Önerileri</h3>
+                <p>E-postalarınıza hızlı ve profesyonel yanıtlar. Özet çıkarma, eylem maddeleri ve duygu analizi.</p>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <span class="feature-check">✓</span>
+                        Akıllı yanıt önerileri
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-check">✓</span>
+                        E-posta özetleme
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-check">✓</span>
+                        Ton ayarlama
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section class="download" id="download">
+        <div class="download-container reveal">
+            <div class="download-card">
+                <div class="section-badge">Ücretsiz</div>
+                <h2>Hemen indirin</h2>
+                <p>Linux için kullanılabilir. Tamamen ücretsiz, reklamsız, açık kaynak. Windows ve macOS desteği yakında.</p>
+
+                <div class="download-buttons">
+                    <a href="https://github.com/owlivion-tech/owlivion-mail/releases/download/v1.2.0/Owlivion.Mail_1.2.0_amd64.deb" class="download-btn">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.002c-.06-.135-.12-.2-.184-.268-.257-.135-.348-.2-.484-.2-.036-.004-.073-.004-.109 0-.016.135-.064.26-.12.382v.003c-.015.045-.016.09-.022.135-.016.135-.016.27.008.336.022.135.072.2.163.334.117.135.283.135.373.2.018.135-.022.2-.063.266-.203.135-.347.2-.566.2-.18 0-.399-.064-.663-.197-.045-.135-.09-.257-.135-.4-.046-.135-.1-.262-.166-.4-.132-.2-.132-.2-.27-.336a.96.96 0 00-.206-.132.753.753 0 00-.206-.27c.015.135.048.2.067.4v.003a2.39 2.39 0 010 .535.958.958 0 01-.043.267v.003c-.022.135-.045.2-.088.333l-.022.135v.003c.248.2.47.403.69.604l.003.003c.168.136.168.2.305.334.136.135.27.2.406.333.272.2.272.2.452.333.18.135.33.27.458.4.023.135.023.267-.053.4-.06.135-.15.27-.27.402l-.003.003c-.12.135-.27.27-.39.333-.12.065-.216.065-.27-.067a.478.478 0 00-.14-.268c-.12-.135-.209-.2-.34-.334-.06-.066-.135-.133-.196-.2v-.003l-.003-.003a1.605 1.605 0 01-.218-.6c-.02-.135-.068-.2-.15-.333-.083-.135-.15-.27-.218-.4l-.003-.003a1.878 1.878 0 01-.135-.668c-.022-.267-.022-.468.023-.668.023-.135.068-.27.09-.4-.135.27-.315.535-.54.8l-.003.003c-.105.135-.225.27-.36.4-.12.135-.285.27-.45.4-.15.135-.285.2-.384.267l-.27.2c-.12.135-.24.27-.27.467-.03.2.06.4.39.534.18.135.39.135.66.2.27.067.45.2.603.333.15.135.225.27.27.4.045.135.045.2 0 .337l-.003.003c-.06.135-.18.27-.27.4-.09.134-.15.2-.195.267l-.09.135c-.09.135-.15.27-.21.4-.06.135-.12.27-.12.4-.015.135 0 .268.075.4.075.135.195.27.42.4v.003c.135.065.285.135.435.2.15.067.3.135.435.27v.002c.12.136.18.27.15.4-.03.135-.15.27-.345.4a.877.877 0 01-.615.135 2.233 2.233 0 01-.585-.2c-.15-.065-.255-.2-.39-.333l-.008-.003c-.15-.2-.24-.4-.27-.6-.03-.2-.015-.4.06-.6a1.64 1.64 0 01.285-.533l.003-.003c.12-.2.24-.267.36-.4.12-.135.18-.2.21-.333.03-.135.03-.27-.045-.4l-.003-.003a.842.842 0 00-.3-.334l-.003-.003c-.12-.065-.27-.135-.45-.135-.18 0-.39.07-.585.2-.195.135-.39.27-.524.4-.12.135-.195.27-.27.4-.075.135-.135.27-.195.4l-.003.003c-.06.135-.135.267-.24.4-.105.135-.225.27-.345.4a3.47 3.47 0 01-.39.333c-.15.135-.285.27-.345.4-.075.135-.09.27 0 .4.075.135.195.27.42.4.135.065.285.135.42.2.135.065.285.135.39.27.105.135.15.27.105.4-.045.135-.165.27-.36.4-.195.135-.42.2-.66.2a2.5 2.5 0 01-.57-.135l-.003-.003c-.225-.065-.39-.2-.525-.333l-.003-.003c-.15-.2-.24-.4-.27-.6-.03-.2-.015-.4.075-.6.075-.2.18-.4.315-.533l.003-.003c.12-.135.24-.27.36-.4l.225-.267c.075-.135.15-.27.165-.4.015-.135-.015-.27-.09-.4l-.003-.003a.842.842 0 00-.3-.334l-.003-.003c-.12-.065-.27-.135-.45-.2-.18-.065-.39-.065-.585 0-.195.065-.39.2-.525.333l-.003.003c-.135.135-.24.27-.33.4a3.07 3.07 0 00-.195.4l-.003.003c-.06.135-.12.27-.21.4-.09.135-.195.27-.315.4-.12.135-.24.267-.36.4a2.04 2.04 0 00-.27.333c-.06.135-.075.267-.015.4.06.135.165.27.36.4.135.065.285.135.42.2.135.067.285.135.39.27.105.135.135.27.09.4-.045.135-.15.27-.345.4-.195.135-.42.2-.645.2a2.33 2.33 0 01-.585-.135l-.003-.003a1.64 1.64 0 01-.525-.333l-.003-.003c-.135-.135-.24-.27-.3-.4a1.15 1.15 0 01-.105-.468v-.135c0-.135.03-.27.09-.4l.003-.003c.06-.135.135-.27.225-.4.09-.135.18-.267.285-.4.105-.135.195-.27.285-.4.075-.135.135-.27.15-.4.015-.135-.015-.27-.09-.4a.842.842 0 00-.3-.334l-.003-.003c-.12-.065-.27-.135-.45-.2-.18-.065-.39-.065-.585 0a1.93 1.93 0 00-.525.333l-.003.003c-.135.135-.24.27-.33.4-.09.135-.15.27-.195.4l-.003.003c-.06.135-.12.27-.21.4-.09.135-.195.27-.315.4-.12.135-.24.267-.36.4a2.04 2.04 0 00-.27.333c-.06.135-.075.267-.015.4.06.135.165.27.36.4.135.065.285.135.42.2.135.067.285.135.39.27.105.135.135.27.09.4-.045.135-.15.27-.345.4-.195.135-.42.2-.645.2z"/>
+                        </svg>
+                        <div class="text">
+                            <div class="label">İndir</div>
+                            <div class="platform">Linux</div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+
+    <script>
+        // Navbar scroll effect
+        const navbar = document.getElementById('navbar');
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 50) {
+                navbar.classList.add('scrolled');
+            } else {
+                navbar.classList.remove('scrolled');
+            }
+        });
+
+        // Cursor glow effect
+        const cursorGlow = document.getElementById('cursorGlow');
+        document.addEventListener('mousemove', (e) => {
+            cursorGlow.style.left = e.clientX + 'px';
+            cursorGlow.style.top = e.clientY + 'px';
+        });
+
+        // Scroll reveal
+        const reveals = document.querySelectorAll('.reveal');
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('active');
+                }
+            });
+        }, { threshold: 0.1 });
+
+        reveals.forEach(el => revealObserver.observe(el));
+
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }
+            });
+        });
+
+    </script>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-brand">
+                <a href="/" class="logo">
+                    <img src="logo.png" alt="Owlivion">
+                    <span>Owlivion Mail</span>
+                </a>
+                <p>Gizliliğinize saygı duyan, yapay zeka destekli açık kaynak e-posta istemcisi. Sonsuza kadar ücretsiz.</p>
+                <div class="footer-social">
+                    <a href="https://github.com/babafpv/owlivion-mail" target="_blank" title="GitHub">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+                        </svg>
+                    </a>
+                    <a href="https://twitter.com/owlivion" target="_blank" title="Twitter">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                        </svg>
+                    </a>
+                </div>
+            </div>
+
+            <div class="footer-section">
+                <h4>Ürün</h4>
+                <ul>
+                    <li><a href="#features">Özellikler</a></li>
+                    <li><a href="#download">İndir</a></li>
+                    <li><a href="https://github.com/babafpv/owlivion-mail/releases" target="_blank">Sürüm Notları</a></li>
+                    <li><a href="https://github.com/babafpv/owlivion-mail/issues" target="_blank">Hata Bildir</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h4>Kaynaklar</h4>
+                <ul>
+                    <li><a href="https://github.com/babafpv/owlivion-mail" target="_blank">Kaynak Kod</a></li>
+                    <li><a href="https://github.com/babafpv/owlivion-mail#readme" target="_blank">Dokümantasyon</a></li>
+                    <li><a href="https://github.com/babafpv/owlivion-mail/blob/main/LICENSE" target="_blank">Lisans (MIT)</a></li>
+                    <li><a href="/mail/privacy/">Gizlilik Politikası</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <p>© 2024 Owlivion. Tüm hakları saklıdır. MIT Lisansı ile dağıtılmaktadır.</p>
+            <div class="footer-badges">
+                <div class="footer-badge">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l7.5 3.75L12 11.68 4.5 7.93 12 4.18z"/>
+                    </svg>
+                    <span>Açık Kaynak</span>
+                </div>
+                <div class="footer-badge">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 6c1.4 0 2.8 1.1 2.8 2.5V11c.6.3 1 .9 1 1.5v3c0 1-.8 1.5-1.8 1.5h-4c-1 0-1.8-.5-1.8-1.5v-3c0-.6.4-1.2 1-1.5V9.5C9.2 8.1 10.6 7 12 7z"/>
+                    </svg>
+                    <span>Gizlilik Odaklı</span>
+                </div>
+                <div class="footer-badge">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+                    </svg>
+                    <span>%100 Ücretsiz</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
