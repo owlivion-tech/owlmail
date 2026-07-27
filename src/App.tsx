@@ -3265,6 +3265,8 @@ function App() {
   // Modal states
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [aiReplyOpen, setAiReplyOpen] = useState(false);
+  const [gotoMode, setGotoMode] = useState(false);
+  const gotoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [aiGeneratedReply, setAiGeneratedReply] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeMode, setComposeMode] = useState<ComposeMode>('new');
@@ -3974,6 +3976,7 @@ function App() {
       const modalOpen = commandPaletteOpen || aiReplyOpen || composeOpen || shortcutsHelpOpen;
 
       if (e.key === "Escape") {
+        if (gotoMode) { setGotoMode(false); if (gotoTimerRef.current) { clearTimeout(gotoTimerRef.current); gotoTimerRef.current = null; } return; }
         setCommandPaletteOpen(false);
         setAiReplyOpen(false);
         setComposeOpen(false);
@@ -3983,10 +3986,27 @@ function App() {
 
       if (modalOpen) return;
 
+      // Goto mode (Gmail-style g+key navigation)
+      if (gotoMode) {
+        setGotoMode(false);
+        if (gotoTimerRef.current) { clearTimeout(gotoTimerRef.current); gotoTimerRef.current = null; }
+        const dest: Record<string, string> = { i: 'INBOX', s: '__starred__', w: '__thisweek__', p: '__important__', z: '__snoozed__', f: '__followup__' };
+        const target = dest[e.key.toLowerCase()];
+        if (target) { setActiveFolder(target); setSelectedEmail(null); }
+        return;
+      }
+
       // Command palette (Ctrl+K / Cmd+K)
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setCommandPaletteOpen(true);
+        return;
+      }
+
+      // AI Reply (Ctrl+G)
+      if ((e.metaKey || e.ctrlKey) && e.key === "g") {
+        e.preventDefault();
+        if (currentEmail) setAiReplyOpen(true);
         return;
       }
 
@@ -4003,7 +4023,12 @@ function App() {
         case "r": if (currentEmail) openCompose('reply'); break;
         case "a": if (currentEmail) openCompose('replyAll'); break;
         case "f": if (currentEmail) openCompose('forward'); break;
-        case "g": if (currentEmail) setAiReplyOpen(true); break;
+        case "g":
+          e.preventDefault();
+          setGotoMode(true);
+          if (gotoTimerRef.current) clearTimeout(gotoTimerRef.current);
+          gotoTimerRef.current = setTimeout(() => { setGotoMode(false); }, 1500);
+          break;
         case "v": if (currentEmail) window.dispatchEvent(new CustomEvent('owlmail:reading-mode')); break;
         case "e": handleArchive(); break;
         case "s": handleToggleStar(); break;
@@ -4019,7 +4044,7 @@ function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commandPaletteOpen, aiReplyOpen, composeOpen, shortcutsHelpOpen, currentEmail, navigateEmail, navigateUnread, openCompose, handleArchive, handleDelete, handleToggleStar, handleToggleRead, selectedEmails, handleBulkClear, focusMode]);
+  }, [commandPaletteOpen, aiReplyOpen, composeOpen, shortcutsHelpOpen, gotoMode, currentEmail, navigateEmail, navigateUnread, openCompose, handleArchive, handleDelete, handleToggleStar, handleToggleRead, selectedEmails, handleBulkClear, focusMode]);
 
   // Dynamic tab title — unread count
   useEffect(() => {
@@ -4667,6 +4692,23 @@ function App() {
             >
               Geri Al
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Goto Mode Indicator */}
+      {gotoMode && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] animate-slide-up pointer-events-none">
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-owl-surface border border-owl-accent/40 shadow-owl-lg backdrop-blur-sm">
+            <span className="text-xs font-bold text-owl-accent uppercase tracking-widest">Goto</span>
+            <div className="flex items-center gap-2 text-xs text-owl-text-secondary">
+              {([['i','Inbox'],['s','Starred'],['w','Bu Hafta'],['p','Önemli'],['z','Ertelendi'],['f','Takip']] as const).map(([k, label]) => (
+                <span key={k} className="flex items-center gap-0.5">
+                  <kbd className="bg-owl-bg border border-owl-border/60 rounded px-1 py-px text-owl-accent font-mono text-[10px]">{k}</kbd>
+                  <span className="text-owl-text-secondary/60">{label}</span>
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       )}

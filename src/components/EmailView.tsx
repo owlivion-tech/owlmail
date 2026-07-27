@@ -422,6 +422,12 @@ export function EmailView({
   // Reading Progress Bar
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const autoMarkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Inline Quick Reply
+  const [quickReplyOpen, setQuickReplyOpen] = useState(false);
+  const [quickReplyText, setQuickReplyText] = useState('');
+  const quickReplyRef = useRef<HTMLTextAreaElement>(null);
 
   const handleBodyScroll = useCallback(() => {
     const el = bodyScrollRef.current;
@@ -463,8 +469,25 @@ export function EmailView({
     setFindBarOpen(false);
     setFindQuery('');
     setFindCurrentIdx(0);
+    setQuickReplyOpen(false);
+    setQuickReplyText('');
+    if (autoMarkTimerRef.current) { clearTimeout(autoMarkTimerRef.current); autoMarkTimerRef.current = null; }
     if (bodyScrollRef.current) bodyScrollRef.current.scrollTop = 0;
   }, [email?.id]);
+
+  // Auto-mark read after scrolling 80%+ for 2 seconds
+  useEffect(() => {
+    if (scrollProgress >= 80 && email && !email.read) {
+      if (!autoMarkTimerRef.current) {
+        autoMarkTimerRef.current = setTimeout(() => {
+          onToggleRead();
+          autoMarkTimerRef.current = null;
+        }, 2000);
+      }
+    } else {
+      if (autoMarkTimerRef.current) { clearTimeout(autoMarkTimerRef.current); autoMarkTimerRef.current = null; }
+    }
+  }, [scrollProgress, email?.read, email?.id, onToggleRead]);
 
   const handleTranslate = useCallback(async () => {
     if (!email) return;
@@ -1184,6 +1207,53 @@ export function EmailView({
           </div>
         )}
       </div>
+
+      {/* ─── INLINE QUICK REPLY ─── */}
+      {onReplyWithText && (
+        <div className="border-t border-owl-border/30 px-4 py-3">
+          {!quickReplyOpen ? (
+            <button
+              onClick={() => { setQuickReplyOpen(true); setTimeout(() => quickReplyRef.current?.focus(), 50); }}
+              className="w-full text-left text-sm text-owl-text-secondary/50 hover:text-owl-text-secondary px-3 py-2 rounded-xl border border-owl-border/30 hover:border-owl-accent/30 hover:bg-owl-surface/50 transition-all"
+            >
+              Hızlı yanıt yaz…
+            </button>
+          ) : (
+            <div className="rounded-xl border border-owl-accent/30 bg-owl-surface/50 overflow-hidden">
+              <textarea
+                ref={quickReplyRef}
+                value={quickReplyText}
+                onChange={(e) => setQuickReplyText(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    if (quickReplyText.trim()) { onReplyWithText(quickReplyText); setQuickReplyOpen(false); setQuickReplyText(''); }
+                  }
+                  if (e.key === 'Escape') { setQuickReplyOpen(false); setQuickReplyText(''); }
+                }}
+                placeholder={`${email.from.name || email.from.email}'e yanıt ver…`}
+                rows={3}
+                className="w-full bg-transparent text-sm text-owl-text placeholder:text-owl-text-secondary/40 px-3 pt-3 pb-1 outline-none resize-none"
+              />
+              <div className="flex items-center justify-between px-3 pb-2">
+                <span className="text-[11px] text-owl-text-secondary/40">
+                  <kbd className="bg-owl-bg border border-owl-border/40 rounded px-1">Ctrl+Enter</kbd> gönder · <kbd className="bg-owl-bg border border-owl-border/40 rounded px-1">Esc</kbd> kapat
+                </span>
+                <div className="flex gap-2">
+                  <button onClick={() => { setQuickReplyOpen(false); setQuickReplyText(''); }} className="text-xs text-owl-text-secondary hover:text-owl-text transition-colors px-2 py-1">İptal</button>
+                  <button
+                    onClick={() => { if (quickReplyText.trim()) { onReplyWithText(quickReplyText); setQuickReplyOpen(false); setQuickReplyText(''); }}}
+                    disabled={!quickReplyText.trim()}
+                    className="text-xs bg-owl-accent hover:bg-owl-accent-hover disabled:opacity-40 text-white px-3 py-1 rounded-lg transition-colors font-medium"
+                  >
+                    Yanıtla
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─── ACTION BAR ─── */}
       <div className="px-6 py-3 border-t border-owl-border/30">
