@@ -243,6 +243,17 @@ function saveNote(id: string, text: string) {
 
 function getNote(id: string): string { return getNotes()[id] || ''; }
 
+// ─── Account Color Coding ────────────────────────────────────────────────────
+
+const ACCOUNT_DOT_COLORS = ['#E91E63','#7B2FBE','#00BCD4','#4CAF50','#FF9800','#F44336','#9C27B0','#2196F3'];
+function getAccountDotColor(accountId: string | number | undefined): string {
+  if (!accountId) return ACCOUNT_DOT_COLORS[0];
+  const str = String(accountId);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  return ACCOUNT_DOT_COLORS[hash % ACCOUNT_DOT_COLORS.length];
+}
+
 // ─── Email Importance ────────────────────────────────────────────────────────
 
 const IMPORTANT_KEY = 'owlmail-important';
@@ -1772,6 +1783,14 @@ function MailPanel({
                       </div>
                     </div>
                     {isUnread && !isBulkSelected && <span className="unread-dot" />}
+                    {/* Account color dot (multi-account mode) */}
+                    {accounts.length > 1 && email.accountId && !emailLabel && (
+                      <span
+                        className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-owl-surface z-20"
+                        style={{ background: getAccountDotColor(email.accountId) }}
+                        title={accounts.find(a => a.id.toString() === email.accountId)?.email || email.accountId}
+                      />
+                    )}
                     {/* Label dot */}
                     {emailLabel && (
                       <span
@@ -2941,6 +2960,14 @@ function App() {
             if (selectedAccountId && typeof selectedAccountId === 'number') {
               emailCache.current.set(cacheKey(selectedAccountId, 'INBOX'), updatedEmails);
             }
+            // Show toast for first new email
+            if (uniqueNewEmails.length > 0) {
+              const first = uniqueNewEmails[0];
+              const preview = (first.preview || first.bodyText || '').slice(0, 80);
+              setNewEmailToast({ id: first.id, from: first.from.name || first.from.email, subject: first.subject, preview });
+              if (newEmailToastTimerRef.current) clearTimeout(newEmailToastTimerRef.current);
+              newEmailToastTimerRef.current = setTimeout(() => setNewEmailToast(null), 6000);
+            }
             return updatedEmails;
           });
         }
@@ -3279,6 +3306,10 @@ function App() {
 
   // Undo Archive/Delete state
   const [undoAction, setUndoAction] = useState<{ type: 'archive' | 'delete'; label: string; emailId: string; secondsLeft: number } | null>(null);
+
+  // New email notification toast
+  const [newEmailToast, setNewEmailToast] = useState<{ id: string; from: string; subject: string; preview: string } | null>(null);
+  const newEmailToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoActionTimerRef = useRef<{ countdown: ReturnType<typeof setInterval>; commit: ReturnType<typeof setTimeout> } | null>(null);
 
   // Focus Mode (Zen/distraction-free reading)
@@ -4691,6 +4722,31 @@ function App() {
               className="text-sm font-semibold text-owl-accent hover:text-owl-accent-hover transition-colors"
             >
               Geri Al
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* New Email Toast */}
+      {newEmailToast && (
+        <div className="fixed top-4 right-4 z-[200] animate-slide-up max-w-sm w-full">
+          <div
+            className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-owl-surface border border-owl-accent/30 shadow-owl-lg backdrop-blur-sm cursor-pointer hover:border-owl-accent/60 transition-colors"
+            onClick={() => { handleEmailSelect(newEmailToast.id); setNewEmailToast(null); setActiveFolder('INBOX'); }}
+          >
+            <div className="mt-0.5 w-2 h-2 rounded-full bg-owl-accent shrink-0 animate-pulse" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-owl-text truncate">{newEmailToast.from}</p>
+              <p className="text-xs text-owl-text-secondary truncate mt-0.5">{newEmailToast.subject}</p>
+              {newEmailToast.preview && (
+                <p className="text-[11px] text-owl-text-secondary/60 truncate mt-0.5">{newEmailToast.preview}</p>
+              )}
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setNewEmailToast(null); }}
+              className="text-owl-text-secondary/40 hover:text-owl-text-secondary transition-colors shrink-0 mt-0.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
           </div>
         </div>

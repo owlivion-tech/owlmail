@@ -93,6 +93,10 @@ export function Compose({
     return html;
   }, [editorBodyHtml, signatureHtml, quoteHtml]);
 
+  // Auto-save draft recovery
+  const [autosaveBanner, setAutosaveBanner] = useState(false);
+  const AUTOSAVE_KEY = 'owlmail-compose-autosave';
+
   // State
   const [isSending, setIsSending] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -115,6 +119,30 @@ export function Compose({
   useEffect(() => {
     if (isOpen) setCentered(true);
   }, [isOpen]);
+
+  // Auto-save compose content every 30s (new email mode only)
+  useEffect(() => {
+    if (!isOpen || mode !== 'new' || isSending) return;
+    const timer = setInterval(() => {
+      const toSave = { to: to.map(a => a.email).join(','), subject, body: editorBodyHtml };
+      if (toSave.subject || toSave.body.trim()) {
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(toSave));
+      }
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [isOpen, mode, isSending, to, subject, editorBodyHtml]);
+
+  // Check for auto-saved draft on open
+  useEffect(() => {
+    if (!isOpen || mode !== 'new') return;
+    const saved = localStorage.getItem(AUTOSAVE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.subject || parsed.body) setAutosaveBanner(true);
+      } catch { /* ignore */ }
+    }
+  }, [isOpen, mode]);
 
   const onDragStart = useCallback((e: RPointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('input, select, button, textarea')) return;
@@ -431,6 +459,7 @@ export function Compose({
         }
       }
 
+      localStorage.removeItem(AUTOSAVE_KEY);
       onClose();
     } catch (err) {
       // SECURITY: Don't expose detailed error info to users
@@ -653,6 +682,35 @@ export function Compose({
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
+            </button>
+          </div>
+        )}
+        {/* Auto-save restore banner */}
+        {autosaveBanner && (
+          <div className="flex items-center gap-3 px-4 py-2 bg-owl-accent/10 border-b border-owl-accent/20 text-sm">
+            <svg className="w-4 h-4 text-owl-accent shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+            </svg>
+            <span className="text-owl-text flex-1">Kaydedilmiş taslak bulundu.</span>
+            <button
+              onClick={() => {
+                try {
+                  const saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY) || '{}');
+                  if (saved.subject) setSubject(saved.subject);
+                  if (saved.body) setEditorBodyHtml(saved.body);
+                  if (saved.to) setTo(saved.to.split(',').filter(Boolean).map((e: string) => ({ email: e.trim(), name: '' })));
+                } catch { /* ignore */ }
+                setAutosaveBanner(false);
+              }}
+              className="text-owl-accent font-semibold hover:text-owl-accent-hover transition-colors"
+            >
+              Geri Yükle
+            </button>
+            <button
+              onClick={() => { localStorage.removeItem(AUTOSAVE_KEY); setAutosaveBanner(false); }}
+              className="text-owl-text-secondary hover:text-owl-text transition-colors"
+            >
+              Yoksay
             </button>
           </div>
         )}
