@@ -59,6 +59,9 @@
     "license": "MIT",
     "licenseFile": "../LICENSE",
     "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
       "nsis": {
         "installMode": "both",
         "displayLanguageSelector": true,
