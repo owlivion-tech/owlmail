@@ -3365,7 +3365,7 @@ function MailPanel({
           {/* Avatar with gradient ring */}
           <div className="relative shrink-0">
             <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[13px] font-bold"
-              style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', boxShadow: '0 0 0 2px rgba(139,92,246,0.25)' }}>
+              style={{ background: 'linear-gradient(135deg, #cc44ff 0%, #ff0080 100%)', boxShadow: '0 0 0 2px rgba(204,68,255,0.25)' }}>
               {selectedAccount?.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || selectedAccount?.email?.charAt(0).toUpperCase() || '?'}
             </div>
             <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-owl-bg" />
@@ -3538,7 +3538,7 @@ function CommandPalette({ isOpen, onClose, onCommand }: { isOpen: boolean; onClo
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-[20vh]" onClick={onClose}>
-      <div className="w-[500px] rounded-2xl overflow-hidden dropdown-panel" style={{boxShadow:'0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(139,92,246,0.15)'}} onClick={(e) => e.stopPropagation()}>
+      <div className="w-[500px] rounded-2xl overflow-hidden dropdown-panel" style={{boxShadow:'0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(204,68,255,0.18)'}} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center px-4 py-3 border-b border-owl-border/50">
           <Icons.Command />
           <input
@@ -4482,6 +4482,28 @@ function App() {
   const [mailPanelWidth, setMailPanelWidth] = useState(() => Math.min(600, Math.max(260, parseInt(localStorage.getItem('owlmail-panel-width') || '380'))));
   const [readingPaneLayout, setReadingPaneLayout] = useState<'right' | 'bottom'>(() => (localStorage.getItem('owlmail-reading-pane-layout') as 'right' | 'bottom') || 'right');
   const dividerDragRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  // ── Panel resize drag handlers ───────────────────────────────────────────
+  // Must stay above the Welcome/Settings/mobile early returns: a hook placed
+  // after them changes the hook count between renders (React error #310).
+  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dividerDragRef.current = { startX: e.clientX, startW: mailPanelWidth };
+    const onMove = (ev: MouseEvent) => {
+      if (!dividerDragRef.current) return;
+      const delta = ev.clientX - dividerDragRef.current.startX;
+      const newW = Math.min(600, Math.max(260, dividerDragRef.current.startW + delta));
+      setMailPanelWidth(newW);
+      localStorage.setItem('owlmail-panel-width', String(newW));
+    };
+    const onUp = () => {
+      dividerDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [mailPanelWidth]);
 
   // Email states
   // Auto-trust own account emails so signatures/images always show
@@ -5625,31 +5647,11 @@ function App() {
     );
   }
 
-  // ── Panel resize drag handlers ───────────────────────────────────────────
-  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    dividerDragRef.current = { startX: e.clientX, startW: mailPanelWidth };
-    const onMove = (ev: MouseEvent) => {
-      if (!dividerDragRef.current) return;
-      const delta = ev.clientX - dividerDragRef.current.startX;
-      const newW = Math.min(600, Math.max(260, dividerDragRef.current.startW + delta));
-      setMailPanelWidth(newW);
-      localStorage.setItem('owlmail-panel-width', String(newW));
-    };
-    const onUp = () => {
-      dividerDragRef.current = null;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [mailPanelWidth]);
-
   // ============================================================================
   // Desktop Layout
   // ============================================================================
   return (
-    <div className={`h-screen ${readingPaneLayout === 'bottom' ? 'flex flex-col' : 'flex'} bg-owl-bg`} style={{background: 'radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.04) 0%, transparent 60%), rgb(var(--owl-bg))'}}>
+    <div className={`h-screen ${readingPaneLayout === 'bottom' ? 'flex flex-col' : 'flex'} bg-owl-bg`} style={{background: 'radial-gradient(ellipse at 20% 50%, rgba(204,68,255,0.06) 0%, transparent 60%), radial-gradient(ellipse at 85% 80%, rgba(255,0,128,0.04) 0%, transparent 55%), rgb(var(--owl-bg))'}}>
       {/* When bottom layout, wrap MailPanel+divider in a top container */}
       <div className={readingPaneLayout === 'bottom' && !focusMode ? 'flex overflow-hidden shrink-0' : 'contents'} style={readingPaneLayout === 'bottom' && !focusMode ? {height: '55%'} : undefined}>
       {!focusMode && <MailPanel
