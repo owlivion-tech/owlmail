@@ -1,0 +1,753 @@
+/* Owlivion Mail - Global Styles */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   Theme CSS Variables
+   Space-separated RGB values for Tailwind alpha support: rgb(var(--x) / 0.5)
+   ============================================================================ */
+:root {
+  /* Dark theme (default) — BabaFPV palette */
+  --owl-bg: 8 4 8;
+  --owl-surface: 13 6 15;
+  --owl-surface-2: 42 26 42;
+  --owl-border: 58 37 58;
+  --owl-text: 255 255 255;
+  --owl-text-secondary: 156 125 156;
+  --owl-accent: 204 68 255;
+  --owl-accent-hover: 176 48 232;
+  --owl-accent-2: 255 0 128;
+  --owl-success: 34 197 94;
+  --owl-warning: 245 158 11;
+  --owl-error: 239 68 68;
+
+  /* BabaFPV brand gradient */
+  --baba-gradient: linear-gradient(135deg, #cc44ff 0%, #ff0080 100%);
+
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --owl-bg: 250 245 255;
+  --owl-surface: 255 255 255;
+  --owl-surface-2: 243 232 255;
+  --owl-border: 233 213 255;
+  --owl-text: 26 5 32;
+  --owl-text-secondary: 120 80 140;
+  --owl-accent: 176 20 220;
+  --owl-accent-hover: 148 10 190;
+  --owl-accent-2: 220 0 100;
+  --owl-success: 22 163 74;
+  --owl-warning: 217 119 6;
+  --owl-error: 220 38 38;
+
+  /* BabaFPV brand gradient */
+  --baba-gradient: linear-gradient(135deg, #cc44ff 0%, #ff0080 100%);
+
+  color-scheme: light;
+}
+
+/* ============================================================================
+   Global Reset & Base
+   ============================================================================ */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: rgb(var(--owl-bg));
+  color: rgb(var(--owl-text));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--owl-border));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--owl-text-secondary));
+}
+
+/* Selection */
+::selection {
+  background: rgb(var(--owl-accent) / 0.3);
+  color: #fff;
+}
+
+[data-theme="light"] ::selection {
+  color: #000;
+}
+
+/* Focus Ring */
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid rgb(var(--owl-accent));
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   Email Content Styles
+   Dark mode: Force dark colors on light-themed email HTML
+   Light mode: Let email's own styles render naturally
+   ============================================================================ */
+.email-content {
+  line-height: 1.6;
+}
+
+/* Dark mode email forcing */
+:root:not([data-theme="light"]) .email-content {
+  color: #d4d4d8 !important;
+  background-color: transparent !important;
+}
+
+:root:not([data-theme="light"]) .email-content div,
+:root:not([data-theme="light"]) .email-content td,
+:root:not([data-theme="light"]) .email-content th,
+:root:not([data-theme="light"]) .email-content table,
+:root:not([data-theme="light"]) .email-content tr,
+:root:not([data-theme="light"]) .email-content tbody,
+:root:not([data-theme="light"]) .email-content thead,
+:root:not([data-theme="light"]) .email-content section,
+:root:not([data-theme="light"]) .email-content article,
+:root:not([data-theme="light"]) .email-content header,
+:root:not([data-theme="light"]) .email-content footer,
+:root:not([data-theme="light"]) .email-content span,
+:root:not([data-theme="light"]) .email-content p,
+:root:not([data-theme="light"]) .email-content h1,
+:root:not([data-theme="light"]) .email-content h2,
+:root:not([data-theme="light"]) .email-content h3,
+:root:not([data-theme="light"]) .email-content h4,
+:root:not([data-theme="light"]) .email-content h5,
+:root:not([data-theme="light"]) .email-content h6,
+:root:not([data-theme="light"]) .email-content li,
+:root:not([data-theme="light"]) .email-content ul,
+:root:not([data-theme="light"]) .email-content ol {
+  background-color: transparent !important;
+  color: #d4d4d8 !important;
+}
+
+:root:not([data-theme="light"]) .email-content a {
+  color: #a78bfa !important;
+  text-decoration: underline;
+}
+
+.email-content img {
+  height: auto;
+}
+
+:root:not([data-theme="light"]) .email-content hr {
+  border-color: #2a2a3a !important;
+}
+
+:root:not([data-theme="light"]) .email-content td,
+:root:not([data-theme="light"]) .email-content th {
+  border-color: #2a2a3a !important;
+}
+
+:root:not([data-theme="light"]) .email-content blockquote {
+  border-left: 3px solid #3a3a4a !important;
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: #a1a1aa !important;
+}
+
+:root:not([data-theme="light"]) .email-content strong,
+:root:not([data-theme="light"]) .email-content b {
+  color: #e4e4e7 !important;
+}
+
+/* Blocked image placeholder - theme-aware */
+.blocked-image {
+  background: rgb(var(--owl-surface-2));
+  padding: 20px;
+  text-align: center;
+  color: rgb(var(--owl-text-secondary));
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+/* Command Palette Backdrop */
+.command-backdrop {
+  backdrop-filter: blur(8px);
+  background: rgb(var(--owl-bg) / 0.8);
+}
+
+/* Animations */
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Hide scrollbar for folder tabs */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Purple filter for logo - teal to purple */
+.logo-purple {
+  filter: hue-rotate(230deg) saturate(2) brightness(1.2);
+}
+
+[data-theme="light"] .logo-purple {
+  filter: hue-rotate(230deg) saturate(1.5) brightness(0.9);
+}
+
+/* Themed select dropdowns */
+select,
+select.bg-owl-bg,
+.settings-panel select,
+[class*="settings"] select {
+  background-color: rgb(var(--owl-bg)) !important;
+  color: rgb(var(--owl-text)) !important;
+  border-color: rgb(var(--owl-border)) !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.75rem center !important;
+  background-size: 1rem !important;
+  padding-right: 2.5rem !important;
+}
+
+/* Select arrow - dark mode */
+:root:not([data-theme="light"]) select,
+:root:not([data-theme="light"]) select.bg-owl-bg,
+:root:not([data-theme="light"]) .settings-panel select,
+:root:not([data-theme="light"]) [class*="settings"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2371717a'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E") !important;
+}
+
+/* Select arrow - light mode */
+[data-theme="light"] select,
+[data-theme="light"] select.bg-owl-bg,
+[data-theme="light"] .settings-panel select,
+[data-theme="light"] [class*="settings"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E") !important;
+}
+
+select option,
+select.bg-owl-bg option {
+  background-color: rgb(var(--owl-bg)) !important;
+  color: rgb(var(--owl-text)) !important;
+  padding: 8px 12px;
+}
+
+select option:hover,
+select option:focus,
+select option:checked {
+  background-color: rgb(var(--owl-surface-2)) !important;
+  color: rgb(var(--owl-text)) !important;
+}
+
+/* Webkit dropdown menu styling */
+select::-webkit-scrollbar {
+  width: 8px;
+}
+
+select::-webkit-scrollbar-track {
+  background: rgb(var(--owl-surface));
+}
+
+select::-webkit-scrollbar-thumb {
+  background: rgb(var(--owl-text-secondary));
+  border-radius: 4px;
+}
+
+/* Firefox specific */
+@-moz-document url-prefix() {
+  select {
+    background-color: rgb(var(--owl-bg)) !important;
+    color: rgb(var(--owl-text)) !important;
+  }
+  select option {
+    background-color: rgb(var(--owl-bg)) !important;
+    color: rgb(var(--owl-text)) !important;
+  }
+}
+
+/* Input and form elements - inherit theme color scheme */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"] {
+  color-scheme: inherit;
+}
+
+/* ============================================================================
+   TipTap Rich Text Editor Styles
+   ============================================================================ */
+
+/* Prose (TipTap content) */
+.prose {
+  color: rgb(var(--owl-text));
+  max-width: none;
+}
+
+.prose p {
+  margin: 0.75rem 0;
+}
+
+.prose p:first-child {
+  margin-top: 0;
+}
+
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+.prose h1, .prose h2, .prose h3 {
+  color: rgb(var(--owl-text));
+  font-weight: 600;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.prose h1 { font-size: 2rem; line-height: 2.5rem; }
+.prose h2 { font-size: 1.5rem; line-height: 2rem; }
+.prose h3 { font-size: 1.25rem; line-height: 1.75rem; }
+
+.prose strong, .prose b {
+  color: rgb(var(--owl-text));
+  font-weight: 600;
+}
+
+.prose em, .prose i {
+  font-style: italic;
+}
+
+.prose u {
+  text-decoration: underline;
+}
+
+.prose a {
+  color: rgb(var(--owl-accent));
+  text-decoration: underline;
+}
+
+.prose a:hover {
+  color: rgb(var(--owl-accent-hover));
+}
+
+.prose ul, .prose ol {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.prose ul {
+  list-style-type: disc;
+}
+
+.prose ol {
+  list-style-type: decimal;
+}
+
+.prose li {
+  margin: 0.25rem 0;
+}
+
+.prose blockquote {
+  border-left: 3px solid rgb(var(--owl-accent));
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: rgb(var(--owl-text-secondary));
+  font-style: italic;
+}
+
+.prose pre {
+  background: rgb(var(--owl-surface-2));
+  border: 1px solid rgb(var(--owl-border));
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.prose code {
+  background: rgb(var(--owl-surface-2));
+  border: 1px solid rgb(var(--owl-border));
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.25rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+}
+
+.prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
+
+/* TipTap placeholder */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgb(var(--owl-text-secondary));
+  pointer-events: none;
+  height: 0;
+}
+
+/* TipTap focus */
+.ProseMirror:focus {
+  outline: none;
+}
+
+/* TipTap selection */
+.ProseMirror ::selection {
+  background: rgb(var(--owl-accent) / 0.3);
+}
+
+/* Ensure proper spacing in editor */
+.ProseMirror {
+  min-height: 300px;
+  padding: 0;
+}
+
+/* Rich text editor container */
+.rich-text-editor {
+  background: transparent;
+  border-radius: 0;
+}
+
+/* ============================================================================
+   Mobile Layout Styles
+   ============================================================================ */
+
+/* Drawer slide-in animation */
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.25s ease-out;
+}
+
+/* Mobile layout */
+.mobile-layout {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Mobile-specific touch targets */
+.mobile-layout button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Safe area support */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent text selection on mobile swipe */
+.mobile-layout .email-row {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ============================================================================
+   Premium UI v2 — Owlivion Design System
+   ============================================================================ */
+
+/* ─── Sidebar ─── */
+.sidebar-panel {
+  background: linear-gradient(
+    170deg,
+    rgb(var(--owl-surface)) 0%,
+    rgb(var(--owl-surface)) 70%,
+    rgb(14 13 22) 100%
+  );
+  border-right: 1px solid rgb(var(--owl-border) / 0.6);
+}
+
+[data-theme="light"] .sidebar-panel {
+  background: linear-gradient(
+    170deg,
+    rgb(var(--owl-surface)) 0%,
+    rgb(var(--owl-surface-2)) 100%
+  );
+}
+
+/* ─── Compose Button ─── */
+.btn-compose {
+  background: var(--baba-gradient);
+  box-shadow: 0 2px 10px rgba(233, 30, 99, 0.4),
+              inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: all 0.15s ease;
+  border: none;
+}
+.btn-compose:hover {
+  box-shadow: 0 4px 20px rgba(233, 30, 99, 0.6),
+              inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+.btn-compose:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 6px rgba(233, 30, 99, 0.3);
+}
+
+/* ─── Search Bar ─── */
+.search-bar {
+  background: rgb(var(--owl-bg) / 0.8);
+  border: 1px solid rgb(var(--owl-border) / 0.7);
+  border-radius: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.search-bar:focus-within {
+  border-color: rgb(var(--owl-accent) / 0.45);
+  box-shadow: 0 0 0 3px rgb(var(--owl-accent) / 0.07);
+}
+
+/* ─── Folder Tabs ─── */
+.folder-tab {
+  position: relative;
+  transition: all 0.12s ease;
+  border-radius: 8px;
+}
+.folder-tab-active {
+  color: rgb(var(--owl-accent));
+  background: rgb(var(--owl-accent) / 0.1);
+  box-shadow: inset 0 0 0 1px rgb(var(--owl-accent) / 0.18);
+}
+
+/* ─── Email Items ─── */
+.email-item {
+  position: relative;
+  transition: background 0.1s, box-shadow 0.1s;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  overflow: hidden;
+}
+.email-item:hover {
+  background: rgb(var(--owl-surface-2) / 0.65);
+  border-color: rgb(var(--owl-border) / 0.5);
+}
+.email-item-selected {
+  background: rgb(var(--owl-accent) / 0.11) !important;
+  border-color: rgb(var(--owl-accent) / 0.28) !important;
+  box-shadow: 0 0 24px rgb(var(--owl-accent) / 0.07),
+              inset 0 1px 0 rgb(var(--owl-accent) / 0.06);
+}
+.email-item-bulk-selected {
+  background: rgb(var(--owl-accent) / 0.07) !important;
+  border-color: rgb(var(--owl-accent) / 0.22) !important;
+}
+.email-item-pinned {
+  position: relative;
+  overflow: hidden;
+}
+.email-item-unread::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18%;
+  height: 64%;
+  width: 3px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed);
+  border-radius: 0 2px 2px 0;
+}
+
+/* Unread dot on avatar */
+.unread-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  background: rgb(var(--owl-accent));
+  border-radius: 50%;
+  border: 2px solid rgb(var(--owl-surface));
+  box-shadow: 0 0 6px rgb(var(--owl-accent) / 0.5);
+}
+
+/* ─── Panel Header ─── */
+.panel-header {
+  background: linear-gradient(135deg,
+    rgba(123, 47, 190, 0.15) 0%,
+    rgba(233, 30, 99, 0.08) 60%,
+    rgb(var(--owl-surface) / 0.97) 100%);
+  border-bottom: 1px solid rgb(var(--owl-border) / 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  position: relative;
+}
+.panel-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--baba-gradient);
+  opacity: 0.4;
+}
+
+/* ─── Section Label ─── */
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+/* ─── Footer Panel ─── */
+.panel-footer {
+  background: linear-gradient(0deg, rgb(var(--owl-bg)) 0%, rgb(var(--owl-surface)) 100%);
+  border-top: 1px solid rgb(var(--owl-border) / 0.4);
+}
+
+/* ─── Logo Glow ─── */
+.logo-glow {
+  filter: drop-shadow(0 0 10px rgba(233, 30, 99, 0.5));
+  transition: filter 0.3s ease;
+}
+.logo-glow:hover {
+  filter: drop-shadow(0 0 18px rgba(233, 30, 99, 0.8)) drop-shadow(0 0 32px rgba(123, 47, 190, 0.4));
+}
+
+/* ─── Action Button ─── */
+.action-btn {
+  padding: 7px;
+  border-radius: 8px;
+  color: rgb(var(--owl-text-secondary));
+  transition: all 0.12s ease;
+}
+.action-btn:hover {
+  background: rgb(var(--owl-surface-2));
+  color: rgb(var(--owl-text));
+}
+
+/* ─── Avatar Glow (unread) ─── */
+.avatar-unread {
+  box-shadow: 0 0 0 2px rgb(var(--owl-accent) / 0.35);
+}
+
+/* ─── Dropdown Premium ─── */
+.dropdown-panel {
+  background: rgb(var(--owl-surface));
+  border: 1px solid rgb(var(--owl-border) / 0.7);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+/* ─── Subject line glow for unread ─── */
+.subject-unread {
+  color: rgb(var(--owl-text));
+  font-weight: 600;
+}
+
+/* ─── Sync button spinning ─── */
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.sync-spinning {
+  animation: spinSlow 1s linear infinite;
+  color: rgb(var(--owl-accent));
+}
+@keyframes bounceSlow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-bounce-slow {
+  animation: bounceSlow 2s ease-in-out infinite;
+}
+
+/* Mobile email content - wider images, better readability */
+.mobile-layout .email-content {
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.mobile-layout .email-content img {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+.mobile-layout .email-content table {
+  max-width: 100% !important;
+  overflow-x: auto;
+  display: block;
+}
+
+.mobile-layout .email-content pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  max-width: 100%;
+}
+
+/* ── Reading Mode ── */
+:root {
+  --reading-bg: #fafafa;
+  --reading-header-bg: rgba(250, 250, 250, 0.93);
+  --reading-border: #e5e7eb;
+  --reading-text: #111827;
+  --reading-text-muted: #6b7280;
+}
+[data-theme="dark"] {
+  --reading-bg: #0f0f17;
+  --reading-header-bg: rgba(15, 15, 23, 0.93);
+  --reading-border: #2a2a3a;
+  --reading-text: #e4e4e7;
+  --reading-text-muted: #71717a;
+}

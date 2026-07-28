@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useTranslation } from '../i18n';
-import owlivionIcon from '../assets/owlivion-logo.svg';
+import owlivionIcon from '../assets/babafpv-logo.webp';
 import type { EmailAddress, Account, Settings as SettingsType } from '../types';
 import { HOME_AI_URL, HOME_AI_DEFAULT_MODEL } from '../config/homeServer';
 import type { PhishingAnalysis, TrackingAnalysis } from '../services/geminiService';
@@ -698,27 +698,13 @@ export function EmailView({
     processCidImages();
   }, [email?.bodyHtml, email?.attachments, email?.id, accountId, folder]);
 
-  // ── Empty state ──
-  if (!email) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-owl-bg">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-owl-surface rounded-2xl flex items-center justify-center mx-auto mb-4 text-owl-text-secondary">
-            <Icon.Mail className="w-7 h-7" />
-          </div>
-          <p className="text-owl-text-secondary">{t('app.selectEmailToRead')}</p>
-          <p className="text-sm text-owl-text-secondary/60 mt-2">
-            <kbd className="px-1.5 py-0.5 bg-owl-surface rounded text-xs">?</kbd> for shortcuts
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   // ── Computed values ──
+  // Everything below must stay ABOVE the empty-state early return: a hook that
+  // sits after it changes the hook count once an email is selected, which
+  // unmounts the app with React error #310.
   const shouldShowImages = showImages || isTrustedSender;
-  const hasHtmlContent = !!email.bodyHtml;
-  const htmlToSanitize = processedHtml || email.bodyHtml;
+  const hasHtmlContent = !!email?.bodyHtml;
+  const htmlToSanitize = processedHtml || email?.bodyHtml;
   const sanitizedHtml = hasHtmlContent && htmlToSanitize
     ? sanitizeEmailHtml(htmlToSanitize, !shouldShowImages, t('app.imageHidden'))
     : null;
@@ -742,8 +728,8 @@ export function EmailView({
     const marks = bodyScrollRef.current.querySelectorAll<HTMLElement>('.find-hl');
     marks.forEach((m, i) => {
       if (i === findCurrentIdx) {
-        m.style.background = 'rgba(233,30,99,0.55)';
-        m.style.outline = '2px solid rgba(233,30,99,0.9)';
+        m.style.background = 'rgba(204,68,255,0.55)';
+        m.style.outline = '2px solid rgba(255,0,128,0.9)';
         m.scrollIntoView({ block: 'center', behavior: 'smooth' });
       } else {
         m.style.background = 'rgba(255,235,0,0.35)';
@@ -770,6 +756,23 @@ export function EmailView({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [email, findBarOpen]);
+
+  // ── Empty state ──
+  if (!email) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-owl-bg">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-owl-surface rounded-2xl flex items-center justify-center mx-auto mb-4 text-owl-text-secondary">
+            <Icon.Mail className="w-7 h-7" />
+          </div>
+          <p className="text-owl-text-secondary">{t('app.selectEmailToRead')}</p>
+          <p className="text-sm text-owl-text-secondary/60 mt-2">
+            <kbd className="px-1.5 py-0.5 bg-owl-surface rounded text-xs">?</kbd> for shortcuts
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const trackerCount = (trackingAnalysis?.trackingPixels?.length || 0) + (trackingAnalysis?.trackingLinks?.length || 0);
   const isPhishingDangerous = phishingAnalysis && phishingAnalysis.score >= 60;

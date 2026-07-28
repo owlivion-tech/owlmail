@@ -2,10 +2,10 @@
 <svg viewBox="0 0 760 520" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="purpleGrad" x1="50%" y1="0%" x2="50%" y2="100%">
-      <stop offset="0%" stop-color="#a78bfa" />
-      <stop offset="35%" stop-color="#8b5cf6" />
-      <stop offset="65%" stop-color="#7c3aed" />
-      <stop offset="100%" stop-color="#6d28d9" />
+      <stop offset="0%" stop-color="#cc44ff" />
+      <stop offset="35%" stop-color="#dd22cc" />
+      <stop offset="65%" stop-color="#ee11a4" />
+      <stop offset="100%" stop-color="#ff0080" />
     </linearGradient>
   </defs>
   <g transform="matrix(0.1,0,0,-0.1,1.5,520)" fill="url(#purpleGrad)" stroke="none">

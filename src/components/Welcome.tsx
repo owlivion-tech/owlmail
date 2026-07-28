@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { useTranslation } from '../i18n';
-import owlivionLogo from '../assets/owlivion-logo.svg';
+import owlivionLogo from '../assets/babafpv-logo.webp';
 
 interface WelcomeProps {
   onAddAccount: () => void;

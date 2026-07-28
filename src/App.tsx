@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import "./App.css";
-import owlivionIcon from "./assets/owl-purple.svg";
+import owlivionIcon from "./assets/babafpv-logo.webp";
 import { Settings } from "./pages/Settings";
 import { Filters } from "./pages/Filters";
 import { AIReplyModal } from "./components/AIReplyModal";

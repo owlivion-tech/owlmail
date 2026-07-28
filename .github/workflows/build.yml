@@ -66,6 +66,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      # A conditional hook shipped twice and blanked the whole UI in production
+      # (React error #310). Fail the build instead of shipping that again.
+      - name: Lint (rules-of-hooks + typecheck)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: pnpm run lint
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

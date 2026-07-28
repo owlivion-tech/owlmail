@@ -57,19 +57,19 @@
        y2="100%">
       <stop
          offset="0%"
-         stop-color="#a78bfa"
+         stop-color="#cc44ff"
          id="stop1" />
       <stop
          offset="35%"
-         stop-color="#8b5cf6"
+         stop-color="#dd22cc"
          id="stop2" />
       <stop
          offset="65%"
-         stop-color="#7c3aed"
+         stop-color="#ee11a4"
          id="stop3" />
       <stop
          offset="100%"
-         stop-color="#6d28d9"
+         stop-color="#ff0080"
          id="stop4" />
     </linearGradient>
     <!-- Gold gradient for IVION -->

@@ -3,7 +3,7 @@ import { useGesture } from '@use-gesture/react';
 import type { Account, ImapFolder } from '../../types';
 import { useMobileNavigation } from '../../stores/mobileNavigationStore';
 import { useTranslation } from '../../i18n';
-import owlivionIcon from '../../assets/owlivion-logo.svg';
+import owlivionIcon from '../../assets/babafpv-logo.webp';
 
 interface MobileDrawerProps {
   accounts: Account[];
