@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "node_modules/.bin/vite build",
+    "beforeBuildCommand": "npx vite build",
     "frontendDist": "../dist"
   },
   "app": {
