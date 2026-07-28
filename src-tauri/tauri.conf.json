@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm run build",
+    "beforeBuildCommand": "node_modules/.bin/vite build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -62,10 +62,7 @@
       "nsis": {
         "installMode": "both",
         "displayLanguageSelector": true,
-        "languages": ["English", "Turkish"],
-        "webviewInstallMode": {
-          "type": "downloadBootstrapper"
-        }
+        "languages": ["English", "Turkish"]
       }
     },
     "linux": {

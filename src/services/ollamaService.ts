@@ -5,7 +5,7 @@
 // Uses /v1/chat/completions (OpenAI-compatible) — no Rust invoke needed.
 
 import type { CategorizationResult, PhishingAnalysis } from './geminiService';
-import { HOME_AI_URL, HOME_AI_DEFAULT_MODEL } from '../config/homeServer';
+import { HOME_AI_URL, HOME_AI_DEFAULT_MODEL, HOME_AI_TOKEN } from '../config/homeServer';
 
 const DEFAULT_OLLAMA_URL = HOME_AI_URL;
 const DEFAULT_MODEL = HOME_AI_DEFAULT_MODEL;
@@ -24,9 +24,12 @@ async function chatComplete(
   if (systemMessage) messages.push({ role: 'system', content: systemMessage });
   messages.push({ role: 'user', content: userMessage });
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (HOME_AI_TOKEN) headers['Authorization'] = `Bearer ${HOME_AI_TOKEN}`;
+
   const res = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ model, messages }),
   });
 

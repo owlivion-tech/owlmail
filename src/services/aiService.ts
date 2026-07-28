@@ -10,6 +10,7 @@ import type { Settings } from '../types';
 import { isPrivateBuild } from '../config/buildVariant';
 import * as geminiService from './geminiService';
 import * as ollamaService from './ollamaService';
+import * as mcpService from './mcpService';
 import { HOME_AI_URL } from '../config/homeServer';
 import type { PhishingAnalysis } from './geminiService';
 
@@ -267,14 +268,24 @@ export async function generateReply(
       break;
     }
     case 'ollama': {
-      reply = await ollamaService.generateReply(
-        options.emailContent,
-        options.tone,
-        options.senderName,
-        options.language,
-        settings.ollamaModel || 'llama3.2',
-        settings.ollamaUrl || HOME_AI_URL,
-      );
+      try {
+        reply = await mcpService.generateReply(
+          options.emailContent,
+          options.tone,
+          options.senderName,
+          options.language,
+          options.emailSubject,
+        );
+      } catch {
+        reply = await ollamaService.generateReply(
+          options.emailContent,
+          options.tone,
+          options.senderName,
+          options.language,
+          settings.ollamaModel || 'llama3.2',
+          settings.ollamaUrl || HOME_AI_URL,
+        );
+      }
       break;
     }
     default:
@@ -313,11 +324,15 @@ export async function summarizeEmail(
       break;
     }
     case 'ollama': {
-      summary = await ollamaService.summarizeEmail(
-        content, language,
-        settings.ollamaModel || 'llama3.2',
-        settings.ollamaUrl || HOME_AI_URL,
-      );
+      try {
+        summary = await mcpService.summarizeEmail(content, language);
+      } catch {
+        summary = await ollamaService.summarizeEmail(
+          content, language,
+          settings.ollamaModel || 'llama3.2',
+          settings.ollamaUrl || HOME_AI_URL,
+        );
+      }
       break;
     }
     default:
@@ -371,11 +386,15 @@ export async function analyzePhishing(
       break;
     }
     case 'ollama': {
-      analysis = await ollamaService.analyzePhishing(
-        email, language,
-        settings.ollamaModel || 'llama3.2',
-        settings.ollamaUrl || HOME_AI_URL,
-      );
+      try {
+        analysis = await mcpService.analyzePhishing(email, language);
+      } catch {
+        analysis = await ollamaService.analyzePhishing(
+          email, language,
+          settings.ollamaModel || 'llama3.2',
+          settings.ollamaUrl || HOME_AI_URL,
+        );
+      }
       break;
     }
     default:

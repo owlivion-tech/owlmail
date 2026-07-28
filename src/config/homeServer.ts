@@ -33,3 +33,11 @@ export const HOME_AI_URL =
 
 /** Default model the home AI bridge maps onto Claude Code. */
 export const HOME_AI_DEFAULT_MODEL = 'sonnet';
+
+/**
+ * Bearer token for the Home AI bridge auth.
+ * Set VITE_HOME_AI_TOKEN in .env.local (never commit it).
+ * Must match AUTH_TOKEN env var on the bridge server.
+ */
+export const HOME_AI_TOKEN =
+  (import.meta.env.VITE_HOME_AI_TOKEN as string | undefined) || '';

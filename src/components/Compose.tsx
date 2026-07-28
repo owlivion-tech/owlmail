@@ -18,6 +18,29 @@ import { templateIncrementUsage } from '../services';
 import { buildTemplateContext, replaceTemplateVariables } from '../utils/templateVariables';
 import type { Email, EmailAddress, DraftEmail, Attachment, Account, EmailTemplate } from '../types';
 
+// ─── Subject History ─────────────────────────────────────────────────────────
+const RECENT_SUBJECTS_KEY = 'owlmail-recent-subjects';
+function getRecentSubjects(): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_SUBJECTS_KEY) || '[]'); } catch { return []; }
+}
+function saveRecentSubject(subject: string): void {
+  if (!subject.trim() || subject.startsWith('Re:') || subject.startsWith('Fwd:')) return;
+  const list = getRecentSubjects().filter(s => s !== subject.trim()).slice(0, 9);
+  localStorage.setItem(RECENT_SUBJECTS_KEY, JSON.stringify([subject.trim(), ...list]));
+}
+
+// ─── Quick Templates (localStorage) ─────────────────────────────────────────
+const QUICK_TPLS_KEY = 'owlmail-quick-templates';
+interface QuickTemplate { id: string; name: string; subject: string; body: string; }
+function getQuickTemplates(): QuickTemplate[] { try { return JSON.parse(localStorage.getItem(QUICK_TPLS_KEY) || '[]'); } catch { return []; } }
+function saveQuickTemplate(tpl: QuickTemplate): void {
+  const list = getQuickTemplates().filter(t => t.id !== tpl.id);
+  localStorage.setItem(QUICK_TPLS_KEY, JSON.stringify([tpl, ...list].slice(0, 20)));
+}
+function deleteQuickTemplate(id: string): void {
+  localStorage.setItem(QUICK_TPLS_KEY, JSON.stringify(getQuickTemplates().filter(t => t.id !== id)));
+}
+
 // SECURITY: Logger wrapper to avoid exposing details in production
 const log = {
   error: (message: string, _err?: unknown) => {
@@ -52,10 +75,12 @@ interface ComposeProps {
   originalEmail?: Email;
   draft?: DraftEmail; // Draft to edit
   initialBody?: string; // Pre-filled body (e.g. from AI Reply)
+  initialTo?: { email: string; name: string }[]; // Pre-filled recipients (quick compose to sender)
   onSend: (email: DraftEmail) => Promise<void>;
   onSaveDraft: (email: DraftEmail) => Promise<void>;
   defaultAccount?: Account;
   onSchedule?: (draft: DraftEmail, sendAt: number) => void;
+  onArchiveOriginal?: () => void;
 }
 
 export function Compose({
@@ -65,9 +90,11 @@ export function Compose({
   originalEmail,
   draft,
   initialBody,
+  initialTo,
   onSend,
   defaultAccount,
   onSchedule,
+  onArchiveOriginal,
 }: ComposeProps) {
   const { t, lang } = useTranslation();
 
@@ -103,8 +130,20 @@ export function Compose({
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const [scheduleDateTime, setScheduleDateTime] = useState('');
   const [isAiSubject, setIsAiSubject] = useState(false);
+  const [showAiCompose, setShowAiCompose] = useState(false);
+  const [aiComposePrompt, setAiComposePrompt] = useState('');
+  const [isAiComposing, setIsAiComposing] = useState(false);
+  const [showRewriteMenu, setShowRewriteMenu] = useState(false);
+  const [isRewriting, setIsRewriting] = useState(false);
+  const [prevBodyHtml, setPrevBodyHtml] = useState<string | null>(null);
   const [draftId, setDraftId] = useState<number | undefined>();
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [priority, setPriority] = useState<'high' | 'normal' | 'low'>('normal');
+  const [subjectFocused, setSubjectFocused] = useState(false);
+  const [recentSubjects, setRecentSubjects] = useState<string[]>([]);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [bccSelf, setBccSelf] = useState(() => localStorage.getItem('owlmail-bcc-self') === '1');
+  const archiveAfterSendRef = React.useRef(false);
   // SECURITY: Use state-based notifications instead of alert()
   const [notification, setNotification] = useState<{ type: 'error' | 'success' | 'warning'; message: string } | null>(null);
 
@@ -117,7 +156,7 @@ export function Compose({
 
   // Reset position when opening
   useEffect(() => {
-    if (isOpen) setCentered(true);
+    if (isOpen) { setCentered(true); setIsMinimized(false); }
   }, [isOpen]);
 
   // Auto-save compose content every 30s (new email mode only)
@@ -199,6 +238,12 @@ export function Compose({
 
   // Template selector
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+
+  // Quick templates (localStorage)
+  const [showQuickTpls, setShowQuickTpls] = useState(false);
+  const [quickTpls, setQuickTpls] = useState<QuickTemplate[]>(() => getQuickTemplates());
+  const [quickTplName, setQuickTplName] = useState('');
+  const [quickTplSaving, setQuickTplSaving] = useState(false);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -308,7 +353,7 @@ export function Compose({
     if (draft) return; // Skip if we're editing a draft
 
     if (mode === 'new') {
-      setTo([]);
+      setTo(initialTo && initialTo.length > 0 ? initialTo : []);
       setCc([]);
       setBcc([]);
       setSubject('');
@@ -342,7 +387,7 @@ export function Compose({
         setQuoteHtml(generateForwardQuote(originalEmail));
       }
     }
-  }, [isOpen, mode, originalEmail, defaultAccount, draft, accountSignature]);
+  }, [isOpen, mode, originalEmail, defaultAccount, draft, accountSignature, initialTo]);
 
 
   // Keyboard shortcuts
@@ -430,11 +475,15 @@ export function Compose({
     setIsSending(true);
 
     try {
+      const bccList = [...bcc];
+      if (bccSelf && defaultAccount?.email && !bccList.some(r => r.email === defaultAccount.email)) {
+        bccList.push({ email: defaultAccount.email, name: defaultAccount.displayName || '' });
+      }
       const draft: DraftEmail = {
         accountId: defaultAccount?.id || 0,
         to,
         cc,
-        bcc,
+        bcc: bccList,
         subject,
         bodyText: bodyHtml.replace(/<[^>]*>/g, ''),
         bodyHtml,
@@ -446,9 +495,10 @@ export function Compose({
 
       await onSend(draft);
 
-      // Save recipients for future autocomplete
+      // Save recipients + subject for future autocomplete
       const { saveRecentRecipients } = await import('./compose/RecipientInput');
       saveRecentRecipients([...to, ...cc, ...bcc]);
+      if (subject.trim()) saveRecentSubject(subject);
 
       // Delete auto-saved draft
       if (draftId) {
@@ -460,7 +510,10 @@ export function Compose({
       }
 
       localStorage.removeItem(AUTOSAVE_KEY);
+      const shouldArchive = archiveAfterSendRef.current;
+      archiveAfterSendRef.current = false;
       onClose();
+      if (shouldArchive) onArchiveOriginal?.();
     } catch (err) {
       // SECURITY: Don't expose detailed error info to users
       log.error('Send failed:', err);
@@ -524,6 +577,97 @@ export function Compose({
       showNotification('warning', 'AI bağlantısı kurulamadı. Ev sunucusunun çalıştığından emin olun.');
     } finally {
       setIsAiSubject(false);
+    }
+  }
+
+  // AI full body compose
+  async function handleAiCompose() {
+    if (!aiComposePrompt.trim()) return;
+    setIsAiComposing(true);
+    try {
+      const { HOME_AI_URL, HOME_AI_DEFAULT_MODEL } = await import('../config/homeServer');
+      const context = [
+        to.length > 0 && `Alıcı: ${to.map(r => r.name || r.email).join(', ')}`,
+        subject && `Konu: ${subject}`,
+      ].filter(Boolean).join('\n');
+      const res = await fetch(`${HOME_AI_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: HOME_AI_DEFAULT_MODEL,
+          messages: [
+            { role: 'system', content: 'Sen profesyonel bir email yazarısın. Kullanıcının talebine göre eksiksiz, nazik ve doğal bir email gövdesi yaz. Sadece email gövdesini yaz — konu, selamlama ve imza dahil olabilir ama giriş açıklaması yazma. Türkçe olarak yaz.' },
+            { role: 'user', content: `${context ? context + '\n\n' : ''}Talep: ${aiComposePrompt.trim()}` },
+          ],
+          max_tokens: 600,
+          temperature: 0.75,
+        }),
+      });
+      if (!res.ok) throw new Error('AI unavailable');
+      const data = await res.json();
+      const body = data.choices?.[0]?.message?.content?.trim();
+      if (body) {
+        const html = body.split('\n').map((l: string) => l ? `<p>${l}</p>` : '<p><br></p>').join('');
+        setEditorBodyHtml(html);
+        setShowAiCompose(false);
+        setAiComposePrompt('');
+        if (!subject) {
+          // Auto-suggest subject too
+          setTimeout(handleAiSubject, 300);
+        }
+      }
+    } catch {
+      showNotification('warning', 'AI bağlantısı kurulamadı.');
+    } finally {
+      setIsAiComposing(false);
+    }
+  }
+
+  const REWRITE_STYLES = [
+    { id: 'formal',   label: 'Daha Resmi',   prompt: 'Bu emaili daha resmi ve profesyonel bir dile çevir. Aynı içeriği koru, sadece üslubu değiştir.' },
+    { id: 'casual',   label: 'Daha Samimi',  prompt: 'Bu emaili daha samimi ve sıcak bir dile çevir. Aynı içeriği koru, sadece üslubu değiştir.' },
+    { id: 'shorter',  label: 'Daha Kısa',    prompt: 'Bu emaili önemli bilgileri koruyarak çok daha kısa ve öz hale getir.' },
+    { id: 'longer',   label: 'Daha Uzun',    prompt: 'Bu emaili daha ayrıntılı ve kapsamlı hale getir, ek bağlam ve açıklamalar ekle.' },
+    { id: 'fix',      label: 'Yazım Düzelt', prompt: 'Bu emaildeki yazım, dil bilgisi ve noktalama hatalarını düzelt. Üslup ve içeriği değiştirme.' },
+    { id: 'english',  label: 'İngilizce',    prompt: 'Bu emaili doğal, akıcı İngilizceye çevir. Resmiyet düzeyini koru.' },
+  ] as const;
+
+  async function handleAiRewrite(styleId: string) {
+    const style = REWRITE_STYLES.find(s => s.id === styleId);
+    if (!style) return;
+    const stripHtml = (h: string) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const currentText = stripHtml(editorBodyHtml);
+    if (!currentText) return;
+    setPrevBodyHtml(editorBodyHtml);
+    setIsRewriting(true);
+    setShowRewriteMenu(false);
+    try {
+      const { HOME_AI_URL, HOME_AI_DEFAULT_MODEL } = await import('../config/homeServer');
+      const res = await fetch(`${HOME_AI_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: HOME_AI_DEFAULT_MODEL,
+          messages: [
+            { role: 'system', content: 'Sen bir email editörüsün. Kullanıcının verdiği email metnini istenen şekilde yeniden yaz. Sadece email gövdesini döndür — hiçbir açıklama, not ya da etiket ekleme.' },
+            { role: 'user', content: `${style.prompt}\n\nEmail:\n${currentText}` },
+          ],
+          max_tokens: 800,
+          temperature: 0.7,
+        }),
+      });
+      if (!res.ok) throw new Error('AI unavailable');
+      const data = await res.json();
+      const body = data.choices?.[0]?.message?.content?.trim();
+      if (body) {
+        const html = body.split('\n').map((l: string) => l ? `<p>${l}</p>` : '<p><br></p>').join('');
+        setEditorBodyHtml(html);
+      }
+    } catch {
+      showNotification('warning', 'AI bağlantısı kurulamadı.');
+      setPrevBodyHtml(null);
+    } finally {
+      setIsRewriting(false);
     }
   }
 
@@ -646,11 +790,29 @@ export function Compose({
 
   if (!isOpen) return null;
 
+  if (isMinimized) {
+    return (
+      <div className="fixed bottom-0 right-6 z-50 flex items-center gap-1.5 bg-owl-surface border border-owl-border border-b-0 rounded-t-xl shadow-owl-lg px-3 py-2 min-w-[240px] max-w-xs">
+        <svg className="w-3.5 h-3.5 text-owl-accent shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        <span className="text-sm text-owl-text truncate flex-1 cursor-pointer" onClick={() => setIsMinimized(false)}>
+          {subject || t('compose.newEmail')}
+        </span>
+        <button onClick={() => setIsMinimized(false)} className="p-1 rounded hover:bg-owl-surface-2 text-owl-text-secondary hover:text-owl-text transition-colors" title="Büyüt">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7"/></svg>
+        </button>
+        <button onClick={onClose} className="p-1 rounded hover:bg-owl-surface-2 text-owl-text-secondary hover:text-red-400 transition-colors" title="Kapat">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`fixed inset-0 z-50 ${centered && !mobile ? 'flex items-center justify-center' : ''} bg-black/60 backdrop-blur-sm`}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onClick={(e) => { if (e.target === e.currentTarget && !mobile) setIsMinimized(true); }}
     >
       <div
         className={`bg-owl-surface shadow-2xl flex flex-col overflow-hidden relative ${
@@ -764,6 +926,15 @@ export function Compose({
               {isSaving ? t('compose.saving') : t('compose.saveDraft')}
             </button>
             <button
+              onClick={() => setIsMinimized(true)}
+              className="p-2 text-owl-text-secondary hover:text-owl-text rounded-lg hover:bg-owl-surface-2 transition-colors"
+              title="Küçült"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
+            </button>
+            <button
               onClick={onClose}
               disabled={isSending}
               className="p-2 text-owl-text-secondary hover:text-owl-text rounded-lg hover:bg-owl-surface-2 transition-colors"
@@ -833,17 +1004,43 @@ export function Compose({
             </div>
           )}
 
+          {/* Recipient count warning */}
+          {to.length + cc.length + bcc.length > 8 && (
+            <div className="flex items-center gap-1.5 px-1 py-1 text-yellow-400/80 text-[11px]">
+              <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+              {to.length + cc.length + bcc.length} alıcı — bazı sunucular toplu gönderimi sınırlayabilir
+            </div>
+          )}
+
           {/* Subject */}
           <div className="flex items-center gap-3">
             <label className="text-sm text-owl-text-secondary w-12">{t('compose.subjectLabel')}</label>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder={t('compose.subjectPlaceholder')}
-              maxLength={500}
-              className="flex-1 px-3 py-2 bg-transparent text-owl-text placeholder-owl-text-secondary focus:outline-none"
-            />
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                onFocus={() => { setSubjectFocused(true); setRecentSubjects(getRecentSubjects()); }}
+                onBlur={() => setTimeout(() => setSubjectFocused(false), 150)}
+                placeholder={t('compose.subjectPlaceholder')}
+                maxLength={500}
+                className="w-full px-3 py-2 bg-transparent text-owl-text placeholder-owl-text-secondary focus:outline-none"
+              />
+              {subjectFocused && !subject && recentSubjects.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-owl-surface border border-owl-border/60 rounded-xl shadow-owl-lg overflow-hidden">
+                  <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-owl-text-secondary/50 font-semibold border-b border-owl-border/30">Son Konular</div>
+                  {recentSubjects.slice(0, 6).map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { setSubject(s); setSubjectFocused(false); }}
+                      className="w-full text-left px-3 py-2 text-sm text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text transition-colors truncate"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               onClick={handleAiSubject}
               disabled={isAiSubject}
@@ -900,6 +1097,20 @@ export function Compose({
         {/* Footer */}
         <div className={`border-t border-owl-border bg-owl-surface-2/50 flex items-center justify-between ${mobile ? 'px-4 py-3' : 'px-6 py-4'}`}>
           <div className="flex items-center gap-2">
+            {/* Priority selector */}
+            <button
+              onClick={() => setPriority(p => p === 'high' ? 'normal' : p === 'normal' ? 'low' : 'high')}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-all border ${
+                priority === 'high' ? 'text-red-400 border-red-400/40 bg-red-400/10' :
+                priority === 'low' ? 'text-green-400 border-green-400/40 bg-green-400/10' :
+                'text-owl-text-secondary/60 border-owl-border/50 hover:border-owl-border'
+              }`}
+              title={priority === 'high' ? 'Yüksek öncelik' : priority === 'low' ? 'Düşük öncelik' : 'Normal öncelik — tıkla değiştir'}
+            >
+              <span>{priority === 'high' ? '🔴' : priority === 'low' ? '🟢' : '🟡'}</span>
+              <span>{priority === 'high' ? 'Yüksek' : priority === 'low' ? 'Düşük' : 'Normal'}</span>
+            </button>
+
             {/* Attach Button */}
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -945,11 +1156,18 @@ export function Compose({
               const bodyText = editorBodyHtml.replace(/<[^>]*>/g, '').trim();
               const words = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
               const chars = bodyText.length;
-              return words > 0 ? (
-                <span className="text-[11px] text-owl-text-secondary/50 tabular-nums">
-                  {words} kelime · {chars} karakter
+              if (words === 0) return null;
+              return (
+                <span className="flex items-center gap-1.5 text-[11px] tabular-nums">
+                  <span className="text-owl-text-secondary/50">{words} kelime · {chars} karakter</span>
+                  {chars > 10000 && (
+                    <span className="text-yellow-400/80 font-medium flex items-center gap-0.5" title="Email çok uzun — bazı istemciler kısaltabilir">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                      Uzun
+                    </span>
+                  )}
                 </span>
-              ) : null;
+              );
             })()}
             {!mobile && (
               <span className="text-xs text-owl-text-secondary">
@@ -957,11 +1175,98 @@ export function Compose({
               </span>
             )}
 
+            {/* AI Rewrite */}
+            {prevBodyHtml !== null && (
+              <button
+                onClick={() => { setEditorBodyHtml(prevBodyHtml); setPrevBodyHtml(null); }}
+                className="px-2.5 py-2 text-xs text-owl-accent border border-owl-accent/40 hover:bg-owl-accent/10 rounded-lg transition-colors font-medium"
+                title="Geri Al — önceki versiyona dön"
+              >↩ Geri Al</button>
+            )}
+            <div className="relative">
+              <button
+                onClick={() => { setShowRewriteMenu(p => !p); setShowAiCompose(false); setShowSchedulePicker(false); }}
+                disabled={isRewriting}
+                className="p-2.5 text-owl-text-secondary hover:text-owl-accent hover:bg-owl-accent/10 rounded-lg transition-colors border border-owl-border/50 relative"
+                title="Metni yeniden yaz"
+              >
+                {isRewriting ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                  </svg>
+                )}
+                <span className="absolute -top-1 -right-1 text-[8px] leading-none text-owl-accent font-bold">AI</span>
+              </button>
+              {showRewriteMenu && (
+                <div className="absolute bottom-full right-0 mb-2 w-44 bg-owl-surface border border-owl-border/60 rounded-xl shadow-owl-lg py-1 z-50 animate-scale-in" onClick={e => e.stopPropagation()}>
+                  <div className="px-3 py-1.5 text-[10px] text-owl-text-secondary/50 font-semibold uppercase tracking-wider">Yeniden Yaz</div>
+                  {REWRITE_STYLES.map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => handleAiRewrite(s.id)}
+                      className="w-full text-left px-3 py-2 text-sm text-owl-text hover:bg-owl-accent/10 hover:text-owl-accent transition-colors"
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* AI Full Compose */}
+            <div className="relative">
+              <button
+                onClick={() => { setShowAiCompose(p => !p); setShowSchedulePicker(false); setShowRewriteMenu(false); }}
+                disabled={isAiComposing}
+                className="p-2.5 text-owl-text-secondary hover:text-owl-accent hover:bg-owl-accent/10 rounded-lg transition-colors border border-owl-border/50 relative"
+                title="AI ile yaz"
+              >
+                {isAiComposing ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                  </svg>
+                )}
+                <span className="absolute -top-1 -right-1 text-[8px] leading-none text-owl-accent font-bold">AI</span>
+              </button>
+              {showAiCompose && (
+                <div className="absolute bottom-full right-0 mb-2 w-72 bg-owl-surface border border-owl-border/60 rounded-xl shadow-owl-lg p-3 z-50 animate-scale-in" onClick={e => e.stopPropagation()}>
+                  <div className="text-[11px] text-owl-text-secondary/60 font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span className="text-owl-accent">✨</span> AI ile Email Yaz
+                  </div>
+                  <textarea
+                    autoFocus
+                    placeholder="Ne hakkında email yazayım? (örn: toplantı talebi, teşekkür mesajı, bilgi isteği...)"
+                    value={aiComposePrompt}
+                    onChange={e => setAiComposePrompt(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleAiCompose(); } if (e.key === 'Escape') setShowAiCompose(false); }}
+                    rows={3}
+                    className="w-full bg-owl-bg text-owl-text text-sm rounded-lg px-3 py-2 border border-owl-border/60 focus:border-owl-accent/50 focus:outline-none mb-2 resize-none placeholder-owl-text-secondary/40"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleAiCompose}
+                      disabled={!aiComposePrompt.trim() || isAiComposing}
+                      className="flex-1 py-2 bg-owl-accent/90 hover:bg-owl-accent disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isAiComposing ? <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> : '✨'}
+                      {isAiComposing ? 'Yazıyor...' : 'Yaz'}
+                    </button>
+                    <button onClick={() => setShowAiCompose(false)} className="px-3 py-2 text-sm text-owl-text-secondary hover:text-owl-text hover:bg-owl-bg rounded-lg transition-colors">İptal</button>
+                  </div>
+                  <p className="text-[10px] text-owl-text-secondary/40 mt-1.5">Ctrl+Enter ile gönder</p>
+                </div>
+              )}
+            </div>
+
             {/* Schedule Send */}
             {onSchedule && (
               <div className="relative">
                 <button
-                  onClick={() => setShowSchedulePicker(p => !p)}
+                  onClick={() => { setShowSchedulePicker(p => !p); setShowAiCompose(false); setShowRewriteMenu(false); }}
                   disabled={isSending}
                   className="p-2.5 text-owl-text-secondary hover:text-owl-accent hover:bg-owl-accent/10 rounded-lg transition-colors border border-owl-border/50"
                   title="Zamanlanmış gönder"
@@ -990,6 +1295,85 @@ export function Compose({
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Quick Templates */}
+            <div className="relative">
+              <button
+                onClick={() => { setShowQuickTpls(p => !p); setQuickTplSaving(false); setShowAiCompose(false); setShowRewriteMenu(false); setShowSchedulePicker(false); }}
+                className="p-2.5 text-owl-text-secondary hover:text-owl-accent hover:bg-owl-accent/10 rounded-lg transition-colors border border-owl-border/50"
+                title="Hızlı şablonlar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+              </button>
+              {showQuickTpls && (
+                <div className="absolute bottom-full right-0 mb-2 w-72 bg-owl-surface border border-owl-border/60 rounded-xl shadow-owl-lg z-50 animate-scale-in overflow-hidden" onClick={e => e.stopPropagation()}>
+                  <div className="px-3 pt-2.5 pb-2 border-b border-owl-border/40 flex items-center justify-between">
+                    <span className="text-[11px] text-owl-text-secondary/60 font-semibold uppercase tracking-wider">📄 Hızlı Şablonlar</span>
+                    <button
+                      onClick={() => { setQuickTplSaving(true); setQuickTplName(subject || 'Şablon'); }}
+                      className="text-[11px] text-owl-accent hover:text-owl-accent/80 font-medium"
+                    >+ Mevcut Taslağı Kaydet</button>
+                  </div>
+                  {quickTplSaving && (
+                    <div className="px-3 py-2 border-b border-owl-border/30 bg-owl-bg/50">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={quickTplName}
+                        onChange={e => setQuickTplName(e.target.value)}
+                        placeholder="Şablon adı…"
+                        className="w-full text-xs bg-owl-bg border border-owl-border/60 rounded px-2 py-1 text-owl-text focus:border-owl-accent/50 focus:outline-none mb-1.5"
+                        onKeyDown={e => { if (e.key === 'Enter') { const tpl: QuickTemplate = { id: Date.now().toString(), name: quickTplName || 'Şablon', subject: subject, body: editorBodyHtml }; saveQuickTemplate(tpl); setQuickTpls(getQuickTemplates()); setQuickTplSaving(false); } if (e.key === 'Escape') setQuickTplSaving(false); }}
+                      />
+                      <div className="flex gap-1">
+                        <button onClick={() => { const tpl: QuickTemplate = { id: Date.now().toString(), name: quickTplName || 'Şablon', subject: subject, body: editorBodyHtml }; saveQuickTemplate(tpl); setQuickTpls(getQuickTemplates()); setQuickTplSaving(false); }} className="flex-1 text-xs py-1 bg-owl-accent text-white rounded hover:bg-owl-accent/80 transition-colors">Kaydet</button>
+                        <button onClick={() => setQuickTplSaving(false)} className="text-xs px-2 py-1 text-owl-text-secondary hover:text-owl-text rounded border border-owl-border/50 transition-colors">İptal</button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="max-h-48 overflow-y-auto py-1">
+                    {quickTpls.length === 0 ? (
+                      <div className="text-center py-4 text-[12px] text-owl-text-secondary/50">Henüz şablon yok</div>
+                    ) : quickTpls.map(tpl => (
+                      <div key={tpl.id} className="flex items-center gap-1 px-2 py-1 hover:bg-owl-bg group">
+                        <button
+                          onClick={() => { if (tpl.subject) setSubject(tpl.subject); setEditorBodyHtml(tpl.body); setShowQuickTpls(false); }}
+                          className="flex-1 text-left"
+                        >
+                          <div className="text-xs text-owl-text font-medium truncate">{tpl.name}</div>
+                          <div className="text-[11px] text-owl-text-secondary/50 truncate">{tpl.subject || '(konu yok)'}</div>
+                        </button>
+                        <button onClick={() => { deleteQuickTemplate(tpl.id); setQuickTpls(getQuickTemplates()); }} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-red-400/60 hover:text-red-400 transition-all">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* BCC Self toggle */}
+            <button
+              onClick={() => { const next = !bccSelf; setBccSelf(next); localStorage.setItem('owlmail-bcc-self', next ? '1' : '0'); }}
+              className={`p-2.5 rounded-lg border transition-colors text-[11px] font-semibold ${bccSelf ? 'border-owl-accent/50 text-owl-accent bg-owl-accent/10' : 'border-owl-border/50 text-owl-text-secondary/50 hover:border-owl-border hover:text-owl-text-secondary'}`}
+              title={bccSelf ? "Kendine BCC — aktif" : "Kendine BCC ekle"}
+            >BCC</button>
+
+            {/* Gönder ve Arşivle (reply/replyAll only) */}
+            {(mode === 'reply' || mode === 'replyAll') && onArchiveOriginal && (
+              <button
+                onClick={() => { archiveAfterSendRef.current = true; handleSend(); }}
+                disabled={isSending || to.length === 0}
+                className="flex items-center gap-1.5 px-4 py-2.5 border border-owl-border/50 text-owl-text-secondary hover:bg-owl-surface-2 hover:text-owl-text rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Gönder ve orijinal emaili arşivle"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8"/></svg>
+              </button>
             )}
 
             <button

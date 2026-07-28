@@ -46,8 +46,78 @@ export function getShortcuts(t: TranslateFn): Record<string, ShortcutDefinition>
       category: 'navigation',
     },
     GO_TO_STARRED: {
-      key: 'g t',
+      key: 'g s',
       description: t('shortcutDescriptions.goToStarred'),
+      category: 'navigation',
+    },
+    GO_TO_THISWEEK: {
+      key: 'g w',
+      description: 'Bu Hafta klasörüne git',
+      category: 'navigation',
+    },
+    GO_TO_IMPORTANT: {
+      key: 'g p',
+      description: 'Önemli klasörüne git',
+      category: 'navigation',
+    },
+    GO_TO_SNOOZED: {
+      key: 'g z',
+      description: 'Ertelendi klasörüne git',
+      category: 'navigation',
+    },
+    GO_TO_FOLLOWUP: {
+      key: 'g f',
+      description: 'Takip klasörüne git',
+      category: 'navigation',
+    },
+    NEXT_UNREAD: {
+      key: ']',
+      description: 'Sonraki okunmamış emaile geç',
+      category: 'navigation',
+    },
+    PREV_UNREAD: {
+      key: '[',
+      description: 'Önceki okunmamış emaile geç',
+      category: 'navigation',
+    },
+    READING_MODE: {
+      key: 'v',
+      description: 'Okuma modunu aç/kapat',
+      category: 'actions',
+    },
+    TOGGLE_IMPORTANT: {
+      key: 'i',
+      description: 'Önemli işaretle / kaldır',
+      category: 'actions',
+    },
+    TOGGLE_READ_LATER: {
+      key: 'b',
+      description: 'Sonra Oku işaretle / kaldır',
+      category: 'actions',
+    },
+    MOVE_TO_FOLDER: {
+      key: 'm',
+      description: 'Klasöre taşı',
+      category: 'actions',
+    },
+    SELECT_ALL_UNREAD: {
+      key: 'Shift+A',
+      description: 'Tüm okunmamışları seç',
+      category: 'actions',
+    },
+    CYCLE_DENSITY: {
+      key: 'd',
+      description: 'Liste yoğunluğunu değiştir (Normal/Kompakt/Geniş)',
+      category: 'actions',
+    },
+    SELECT_EMAIL: {
+      key: 'x',
+      description: 'Seçim: mevcut emaili seç/kaldır',
+      category: 'actions',
+    },
+    NEXT_FOLDER: {
+      key: 'n',
+      description: 'Sonraki klasöre geç',
       category: 'navigation',
     },
 
@@ -174,7 +244,7 @@ export function getShortcuts(t: TranslateFn): Record<string, ShortcutDefinition>
 
     // AI
     AI_REPLY: {
-      key: 'g',
+      key: 'Ctrl+g',
       description: t('shortcutDescriptions.aiReply'),
       category: 'ai',
     },

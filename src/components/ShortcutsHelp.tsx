@@ -2,6 +2,7 @@
 // OwlMail - Keyboard Shortcuts Help Modal
 // ============================================================================
 
+import { useState } from 'react';
 import { useTranslation } from '../i18n';
 import { useShortcut } from '../hooks/useKeyboardShortcuts';
 import {
@@ -17,14 +18,25 @@ interface ShortcutsHelpProps {
 
 export function ShortcutsHelp({ isOpen, onClose }: ShortcutsHelpProps) {
   const { t } = useTranslation();
+  const [shortcutSearch, setShortcutSearch] = useState('');
 
   // Close on Escape
   useShortcut('Escape', onClose, { enabled: isOpen });
 
-  if (!isOpen) return null;
+  if (!isOpen) { return null; }
 
   const groupedShortcuts = getShortcutsByCategory(t);
   const shortcutCategories = getShortcutCategories(t);
+
+  const filteredGrouped = shortcutSearch.trim().length < 2 ? groupedShortcuts : Object.fromEntries(
+    Object.entries(groupedShortcuts).map(([cat, shortcuts]) => [
+      cat,
+      shortcuts.filter(s =>
+        s.description.toLowerCase().includes(shortcutSearch.toLowerCase()) ||
+        formatShortcutKey(s.key).toLowerCase().includes(shortcutSearch.toLowerCase())
+      )
+    ])
+  );
 
   return (
     <div
@@ -36,35 +48,40 @@ export function ShortcutsHelp({ isOpen, onClose }: ShortcutsHelpProps) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-owl-border">
-          <h2 className="text-lg font-semibold text-owl-text">
-            {t('shortcuts.title')}
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-owl-text-secondary hover:text-owl-text rounded-lg hover:bg-owl-surface-2 transition-colors"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+        <div className="px-6 py-4 border-b border-owl-border">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-owl-text">
+              {t('shortcuts.title')}
+            </h2>
+            <button
+              onClick={onClose}
+              className="p-2 text-owl-text-secondary hover:text-owl-text rounded-lg hover:bg-owl-surface-2 transition-colors"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-owl-text-secondary/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-          </button>
+            <input
+              autoFocus={false}
+              type="text"
+              value={shortcutSearch}
+              onChange={e => setShortcutSearch(e.target.value)}
+              placeholder="Kısayol ara…"
+              className="w-full pl-9 pr-3 py-1.5 text-sm bg-owl-bg border border-owl-border/60 rounded-lg text-owl-text placeholder-owl-text-secondary/40 focus:outline-none focus:border-owl-accent/50"
+            />
+          </div>
         </div>
 
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
           <div className="grid grid-cols-2 gap-8">
             {Object.entries(shortcutCategories).map(([categoryKey, category]) => {
-              const shortcuts = groupedShortcuts[categoryKey];
+              const shortcuts = filteredGrouped[categoryKey];
               if (!shortcuts || shortcuts.length === 0) return null;
 
               return (

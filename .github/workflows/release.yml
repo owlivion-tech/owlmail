@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g., v1.0.0)'
+        description: 'Release tag (e.g., v1.2.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.2.0'
 
 permissions:
   contents: write
@@ -26,9 +26,6 @@ jobs:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             bundles: nsis
-          - platform: macos-latest
-            target: x86_64-apple-darwin
-            bundles: dmg
           - platform: macos-latest
             target: aarch64-apple-darwin
             bundles: dmg
@@ -58,7 +55,14 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -67,29 +71,27 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_HOME_AI_TOKEN: ${{ secrets.HOME_AI_TOKEN }}
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: 'Owlivion Mail ${{ github.event.inputs.tag || github.ref_name }}'
+          releaseName: 'OwlMail Pro ${{ github.event.inputs.tag || github.ref_name }}'
           releaseBody: |
-            ## Owlivion Mail ${{ github.event.inputs.tag || github.ref_name }}
+            ## OwlMail Pro ${{ github.event.inputs.tag || github.ref_name }}
 
-            Smart, Secure, Free Email Client with AI-Powered Phishing Detection.
+            Güvenli, AI destekli kişisel email istemcisi.
 
-            ### Downloads
+            ### İndirmeler
 
-            | Platform | File |
-            |----------|------|
+            | Platform | Dosya |
+            |----------|-------|
             | Windows | `.exe` (NSIS installer) |
-            | macOS (Intel) | `_x64.dmg` |
             | macOS (Apple Silicon) | `_aarch64.dmg` |
-            | Linux (Debian/Ubuntu/Kali) | `.deb` |
+            | Linux (Debian/Ubuntu) | `.deb` |
             | Linux (Universal) | `.AppImage` |
 
-            ### Installation Notes
-            - **Gmail**: Use App Password, not regular password
-            - **AI Phishing Detection**: Optional, requires Gemini API key
-
-            Full documentation: https://github.com/owlivion-tech/owlivion-mail#readme
+            ### Kurulum Notları
+            - Gmail için App Password kullanın
+            - AI özellikleri için home server bağlantısı gerekli
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}

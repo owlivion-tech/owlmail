@@ -11,7 +11,8 @@ import { AddAccountModal } from "./components/settings/AddAccountModal";
 import SearchFiltersComponent from "./components/SearchFilters";
 import { EmailView } from "./components/EmailView";
 import { ContextMenu, useContextMenu } from "./components/ContextMenu";
-import { summarizeEmail, analyzePhishing, detectEmailTracking, type PhishingAnalysis, type TrackingAnalysis } from "./services/geminiService";
+import { summarizeEmail, analyzePhishing, detectEmailTracking } from "./services/aiService";
+import type { PhishingAnalysis, TrackingAnalysis } from "./services/geminiService";
 import { requestNotificationPermission, showNewEmailNotification, playNotificationSound } from "./services/notificationService";
 import { listDrafts, getDraft, deleteDraft, saveDraft } from "./services/draftService";
 import type { DraftEmail, EmailAddress, Account, ImapFolder, DraftListItem, SearchFilters, Settings as SettingsType } from "./types";
@@ -188,6 +189,21 @@ function addSearchHistory(query: string) {
 }
 function clearSearchHistory() { localStorage.removeItem(SEARCH_HISTORY_KEY); }
 
+// ─── Search Presets ───────────────────────────────────────────────────────────
+const SEARCH_PRESETS_KEY = 'owlmail-search-presets';
+interface SearchPreset { name: string; query: string; }
+function getSearchPresets(): SearchPreset[] {
+  try { return JSON.parse(localStorage.getItem(SEARCH_PRESETS_KEY) || '[]'); } catch { return []; }
+}
+function saveSearchPreset(name: string, query: string): void {
+  const presets = getSearchPresets().filter(p => p.query !== query);
+  localStorage.setItem(SEARCH_PRESETS_KEY, JSON.stringify([{ name, query }, ...presets].slice(0, 10)));
+}
+function deleteSearchPreset(query: string): void {
+  const presets = getSearchPresets().filter(p => p.query !== query);
+  localStorage.setItem(SEARCH_PRESETS_KEY, JSON.stringify(presets));
+}
+
 // ─── Pin Storage ────────────────────────────────────────────────────────────
 
 const PIN_KEY = 'owlmail-pinned';
@@ -254,6 +270,126 @@ function getAccountDotColor(accountId: string | number | undefined): string {
   return ACCOUNT_DOT_COLORS[hash % ACCOUNT_DOT_COLORS.length];
 }
 
+// ─── Email Row Color Highlight ───────────────────────────────────────────────
+
+const ROW_COLOR_KEY = 'owlmail-row-colors';
+const ROW_COLORS: { id: string; bg: string; border: string; label: string }[] = [
+  { id: 'red',    bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.45)',   label: 'Kırmızı' },
+  { id: 'orange', bg: 'rgba(249,115,22,0.10)',  border: 'rgba(249,115,22,0.45)',  label: 'Turuncu' },
+  { id: 'yellow', bg: 'rgba(234,179,8,0.10)',   border: 'rgba(234,179,8,0.45)',   label: 'Sarı' },
+  { id: 'green',  bg: 'rgba(34,197,94,0.10)',   border: 'rgba(34,197,94,0.45)',   label: 'Yeşil' },
+  { id: 'blue',   bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.45)',  label: 'Mavi' },
+  { id: 'purple', bg: 'rgba(168,85,247,0.10)',  border: 'rgba(168,85,247,0.45)', label: 'Mor' },
+];
+function getRowColors(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(ROW_COLOR_KEY) || '{}'); } catch { return {}; }
+}
+function getRowColor(id: string): string | null { return getRowColors()[id] || null; }
+function setRowColorStorage(id: string, colorId: string | null): void {
+  const m = getRowColors();
+  if (colorId) m[id] = colorId; else delete m[id];
+  localStorage.setItem(ROW_COLOR_KEY, JSON.stringify(m));
+}
+
+// ─── Email Tone Detection ────────────────────────────────────────────────────
+
+type EmailTone = { label: string; emoji: string; color: string };
+function detectEmailTone(subject: string, body: string, fromEmail: string): EmailTone | null {
+  const text = (body + ' ' + subject).toLowerCase();
+  const from = fromEmail.toLowerCase();
+  if (/urgent|acil|asap|immediately|hemen|kritik|critical|son\s+gün|deadline/.test(text))
+    return { label: 'Acil', emoji: '🚨', color: '#ef4444' };
+  if (/meeting|toplantı|call|görüşme|zoom|teams|invite|davet|agenda|gündem/.test(text))
+    return { label: 'Toplantı', emoji: '📅', color: '#3b82f6' };
+  if (/invoice|fatura|payment|ödeme|receipt|makbuz|transfer|banka|bank/.test(text))
+    return { label: 'Finans', emoji: '💰', color: '#22c55e' };
+  if (/unsubscribe|newsletter|bülten|promotion|promosyon|noreply|no-reply/.test(text + ' ' + from))
+    return { label: 'Bülten', emoji: '📰', color: '#6b7280' };
+  if (/action required|işlem gerekli|please review|approval|onay|confirm|onayla/.test(text))
+    return { label: 'Eylem', emoji: '📋', color: '#f97316' };
+  if (/congrat|tebrik|thank|teşekkür|bravo|kutlu/.test(text))
+    return { label: 'Olumlu', emoji: '🎉', color: '#eab308' };
+  if (/question|soru|wondering|merak|could you|yapabilir misin/.test(text))
+    return { label: 'Soru', emoji: '❓', color: '#a855f7' };
+  return null;
+}
+
+// ─── Sender Mute ─────────────────────────────────────────────────────────────
+
+const MUTED_KEY = 'owlmail-muted-senders';
+function getMutedSet(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(MUTED_KEY) || '[]')); } catch { return new Set(); }
+}
+function isMuted(senderEmail: string): boolean { return getMutedSet().has(senderEmail.toLowerCase()); }
+function muteSender(senderEmail: string): void {
+  const s = getMutedSet();
+  s.add(senderEmail.toLowerCase());
+  localStorage.setItem(MUTED_KEY, JSON.stringify([...s]));
+}
+function unmuteSender(senderEmail: string): void {
+  const s = getMutedSet();
+  s.delete(senderEmail.toLowerCase());
+  localStorage.setItem(MUTED_KEY, JSON.stringify([...s]));
+}
+
+// ─── Folder Colors ───────────────────────────────────────────────────────────
+const FOLDER_COLOR_KEY = 'owlmail-folder-colors';
+const FOLDER_COLORS = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1','#14b8a6'];
+function getFolderColors(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(FOLDER_COLOR_KEY) || '{}'); } catch { return {}; }
+}
+function getFolderColor(path: string): string | null { return getFolderColors()[path] || null; }
+function setFolderColor(path: string, color: string | null): void {
+  const m = getFolderColors();
+  if (color) m[path] = color; else delete m[path];
+  localStorage.setItem(FOLDER_COLOR_KEY, JSON.stringify(m));
+}
+
+// ─── Favourite Folders ───────────────────────────────────────────────────────
+const FAV_FOLDERS_KEY = 'owlmail-fav-folders';
+function getFavFolders(): string[] { try { return JSON.parse(localStorage.getItem(FAV_FOLDERS_KEY) || '[]'); } catch { return []; } }
+function isFavFolder(path: string): boolean { return getFavFolders().includes(path); }
+function toggleFavFolder(path: string): void {
+  const list = getFavFolders();
+  localStorage.setItem(FAV_FOLDERS_KEY, JSON.stringify(list.includes(path) ? list.filter(p => p !== path) : [...list, path]));
+}
+
+// ─── VIP Contacts ────────────────────────────────────────────────────────────
+const VIP_KEY = 'owlmail-vip-contacts';
+function getVipSet(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(VIP_KEY) || '[]')); } catch { return new Set(); }
+}
+function isVip(senderEmail: string): boolean { return getVipSet().has(senderEmail.toLowerCase()); }
+function addVip(senderEmail: string): void {
+  const s = getVipSet(); s.add(senderEmail.toLowerCase());
+  localStorage.setItem(VIP_KEY, JSON.stringify([...s]));
+}
+function removeVip(senderEmail: string): void {
+  const s = getVipSet(); s.delete(senderEmail.toLowerCase());
+  localStorage.setItem(VIP_KEY, JSON.stringify([...s]));
+}
+
+// ─── Replied Tracking ────────────────────────────────────────────────────────
+// ─── Per-folder Sort Memory ──────────────────────────────────────────────────
+const FOLDER_SORT_KEY = 'owlmail-folder-sort';
+function getFolderSort(folder: string): { by: 'date' | 'account' | 'unread' | 'priority'; dir: 'asc' | 'desc' } | null {
+  try { const m = JSON.parse(localStorage.getItem(FOLDER_SORT_KEY) || '{}'); return m[folder] || null; } catch { return null; }
+}
+function saveFolderSort(folder: string, by: string, dir: string): void {
+  try { const m = JSON.parse(localStorage.getItem(FOLDER_SORT_KEY) || '{}'); m[folder] = { by, dir }; localStorage.setItem(FOLDER_SORT_KEY, JSON.stringify(m)); } catch { /* ignore */ }
+}
+
+const REPLIED_KEY = 'owlmail-replied';
+function getRepliedSet(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(REPLIED_KEY) || '[]')); } catch { return new Set(); }
+}
+function isReplied(id: string): boolean { return getRepliedSet().has(id); }
+function markReplied(id: string): void {
+  const s = getRepliedSet();
+  s.add(id);
+  localStorage.setItem(REPLIED_KEY, JSON.stringify([...s]));
+}
+
 // ─── Email Importance ────────────────────────────────────────────────────────
 
 const IMPORTANT_KEY = 'owlmail-important';
@@ -286,6 +422,31 @@ function toggleReaction(emailId: string, emoji: string) {
 }
 
 function getEmailReactions(emailId: string): string[] { return getReactions()[emailId] || []; }
+
+// ─── Email View Count ────────────────────────────────────────────────────────
+const VIEW_COUNT_KEY = 'owlmail-view-counts';
+function getViewCount(id: string): number {
+  try { const m = JSON.parse(localStorage.getItem(VIEW_COUNT_KEY) || '{}'); return m[id] || 0; } catch { return 0; }
+}
+function incrementViewCount(id: string): void {
+  try {
+    const m = JSON.parse(localStorage.getItem(VIEW_COUNT_KEY) || '{}');
+    m[id] = (m[id] || 0) + 1;
+    localStorage.setItem(VIEW_COUNT_KEY, JSON.stringify(m));
+  } catch { /* ignore */ }
+}
+
+// ─── Read Later ───────────────────────────────────────────────────────────────
+const READ_LATER_KEY = 'owlmail-read-later';
+function getReadLaterSet(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(READ_LATER_KEY) || '[]')); } catch { return new Set(); }
+}
+function isReadLater(id: string): boolean { return getReadLaterSet().has(id); }
+function toggleReadLater(id: string): void {
+  const s = getReadLaterSet();
+  if (s.has(id)) s.delete(id); else s.add(id);
+  localStorage.setItem(READ_LATER_KEY, JSON.stringify([...s]));
+}
 
 // ─── Task Storage ─────────────────────────────────────────────────────────────
 
@@ -565,15 +726,26 @@ function FolderTreeItem({
   level,
   activeFolder,
   onFolderChange,
+  onEmailDrop,
+  onMarkFolderRead,
+  onToggleFavFolder,
 }: {
   node: FolderTreeNode;
   level: number;
   activeFolder: string;
   onFolderChange: (path: string) => void;
+  onEmailDrop?: (emailId: string, folderPath: string) => void;
+  onMarkFolderRead?: (path: string) => void;
+  onToggleFavFolder?: (path: string) => void;
 }) {
   const [expanded, setExpanded] = useState(level === 0);
+  const [isDragTarget, setIsDragTarget] = useState(false);
+  const [colorMenuOpen, setColorMenuOpen] = useState(false);
+  const [, folderColorForceUpdate] = useState(0);
+  const [, favForceUpdate] = useState(0);
   const hasChildren = node.children.length > 0;
   const isActive = activeFolder === node.folder.path;
+  const folderColor = getFolderColor(node.folder.path);
 
   return (
     <div>
@@ -586,8 +758,14 @@ function FolderTreeItem({
             setExpanded(!expanded);
           }
         }}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setColorMenuOpen(p => !p); }}
+        onDragOver={(e) => { if (onEmailDrop && node.folder.is_selectable) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setIsDragTarget(true); } }}
+        onDragLeave={() => setIsDragTarget(false)}
+        onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData('text/email-id'); if (id && onEmailDrop && node.folder.is_selectable) onEmailDrop(id, node.folder.path); setIsDragTarget(false); }}
         className={`w-full flex items-center gap-2 py-1.5 rounded-lg transition-all text-sm ${
-          isActive
+          isDragTarget
+            ? "bg-owl-accent/20 text-owl-accent ring-1 ring-owl-accent/40"
+            : isActive
             ? "bg-owl-accent/15 text-owl-accent font-medium"
             : "text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text"
         }`}
@@ -599,7 +777,12 @@ function FolderTreeItem({
           </span>
         )}
         {!hasChildren && <span className="w-4" />}
-        {getFolderIcon(node.folder.folder_type, node.folder.name)}
+        <span className="relative">
+          {getFolderIcon(node.folder.folder_type, node.folder.name)}
+          {folderColor && (
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-owl-surface" style={{ background: folderColor }} />
+          )}
+        </span>
         <span className="flex-1 truncate text-left">{node.folder.name}</span>
         {node.folder.unread_count > 0 && (
           <span className={`text-xs px-1.5 py-0.5 rounded-full ${
@@ -609,6 +792,43 @@ function FolderTreeItem({
           </span>
         )}
       </button>
+      {colorMenuOpen && (
+        <div className="mx-2 mb-1 p-2 bg-owl-surface border border-owl-border/50 rounded-lg z-50 animate-scale-in" onClick={e => e.stopPropagation()}>
+          {onToggleFavFolder && (
+            <button
+              onClick={() => { toggleFavFolder(node.folder.path); favForceUpdate(n => n + 1); onToggleFavFolder(node.folder.path); setColorMenuOpen(false); }}
+              className="w-full text-left text-[11px] text-owl-text-secondary hover:text-yellow-400 hover:bg-yellow-400/10 px-2 py-1.5 rounded-md transition-colors mb-1 flex items-center gap-1.5"
+            >
+              {isFavFolder(node.folder.path) ? '★ Favorilerden Çıkar' : '☆ Favorilere Ekle'}
+            </button>
+          )}
+          {onMarkFolderRead && (
+            <button
+              onClick={() => { onMarkFolderRead(node.folder.path); setColorMenuOpen(false); }}
+              className="w-full text-left text-[11px] text-owl-text-secondary hover:text-owl-accent hover:bg-owl-accent/10 px-2 py-1.5 rounded-md transition-colors mb-1.5 flex items-center gap-1.5"
+            >
+              <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+              Tümünü Okundu İşaretle
+            </button>
+          )}
+          <div className="text-[10px] text-owl-text-secondary/50 font-semibold uppercase tracking-wider mb-1.5">Klasör Rengi</div>
+          <div className="flex flex-wrap gap-1.5">
+            {FOLDER_COLORS.map(c => (
+              <button key={c} onClick={() => { setFolderColor(node.folder.path, folderColor === c ? null : c); setColorMenuOpen(false); folderColorForceUpdate(n => n + 1); }}
+                className="w-5 h-5 rounded-full border-2 transition-all hover:scale-110"
+                style={{ background: c, borderColor: folderColor === c ? 'white' : 'transparent', boxShadow: folderColor === c ? `0 0 0 1px ${c}` : 'none' }}
+                title={c}
+              />
+            ))}
+            {folderColor && (
+              <button onClick={() => { setFolderColor(node.folder.path, null); setColorMenuOpen(false); folderColorForceUpdate(n => n + 1); }}
+                className="w-5 h-5 rounded-full border border-owl-border flex items-center justify-center text-owl-text-secondary/60 hover:text-red-400 hover:border-red-400 transition-all text-[10px] font-bold"
+                title="Rengi kaldır"
+              >✕</button>
+            )}
+          </div>
+        </div>
+      )}
       {hasChildren && expanded && (
         <div>
           {node.children.map((child) => (
@@ -618,11 +838,28 @@ function FolderTreeItem({
               level={level + 1}
               activeFolder={activeFolder}
               onFolderChange={onFolderChange}
+              onEmailDrop={onEmailDrop}
+              onMarkFolderRead={onMarkFolderRead}
+              onToggleFavFolder={onToggleFavFolder}
             />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+// Highlight matching text in email list
+function highlightText(text: string, query: string): React.ReactNode {
+  if (!query || query.length < 2) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-owl-accent/30 text-owl-text rounded-sm px-px">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
   );
 }
 
@@ -649,6 +886,8 @@ function MailPanel({
   imapFolders,
   isLoadingFolders,
   onToggleStar,
+  onArchive,
+  onDelete,
   onDeleteDraft,
   drafts,
   isLoadingDrafts: _isLoadingDrafts,
@@ -673,6 +912,20 @@ function MailPanel({
   currentTheme = 'dark',
   onThemeToggle,
   onMarkAllRead,
+  onEmailDrop,
+  dndUntil = null,
+  dndRemaining = '',
+  onDndSet,
+  syncPaused = false,
+  onToggleSyncPause,
+  isOnline = true,
+  readingPaneLayout = 'right' as 'right' | 'bottom',
+  onToggleReadingPaneLayout,
+  onMarkFolderRead,
+  onNavigateUnread,
+  favFolders = [],
+  onToggleFavFolder,
+  onQuickComposeTo,
 }: {
   emails: Email[];
   selectedId: string | null;
@@ -698,6 +951,8 @@ function MailPanel({
   imapFolders: ImapFolder[];
   isLoadingFolders: boolean;
   onToggleStar: (emailId: string) => void;
+  onArchive?: (emailId: string) => void;
+  onDelete?: (emailId: string) => void;
   onDeleteDraft?: (draftId: number) => void;
   drafts: DraftListItem[];
   isLoadingDrafts: boolean;
@@ -710,7 +965,7 @@ function MailPanel({
   onBulkToggle: (id: string) => void;
   onBulkSelectAll: (ids: string[]) => void;
   onBulkClear: () => void;
-  onBulkAction: (action: 'read' | 'unread' | 'star' | 'unstar' | 'archive' | 'delete') => void;
+  onBulkAction: (action: 'read' | 'unread' | 'star' | 'unstar' | 'archive' | 'delete' | 'pin' | 'snooze1h' | 'snoozetomorrow' | 'readlater' | 'important') => void;
   conversationView: boolean;
   compactView: boolean;
   collapsed?: boolean;
@@ -719,13 +974,49 @@ function MailPanel({
   currentTheme?: 'dark' | 'light';
   onThemeToggle?: () => void;
   onMarkAllRead?: () => void;
+  onEmailDrop?: (emailId: string, targetFolderPath: string) => void;
+  dndUntil?: number | null;
+  dndRemaining?: string;
+  onDndSet?: (until: number | null) => void;
+  syncPaused?: boolean;
+  onToggleSyncPause?: () => void;
+  isOnline?: boolean;
+  readingPaneLayout?: 'right' | 'bottom';
+  onToggleReadingPaneLayout?: () => void;
+  onMarkFolderRead?: (path: string) => void;
+  onNavigateUnread?: (dir: 'next' | 'prev') => void;
+  favFolders?: string[];
+  onToggleFavFolder?: (path: string) => void;
+  onQuickComposeTo?: (recipient: { email: string; name: string }) => void;
 }) {
   const { t, lang } = useTranslation();
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const [dndMenuOpen, setDndMenuOpen] = useState(false);
+  const [viewDensity, setViewDensity] = useState<'normal' | 'compact' | 'comfortable'>(() =>
+    (localStorage.getItem('owlmail-view-density') as 'normal' | 'compact' | 'comfortable') || 'normal'
+  );
+
+  useEffect(() => {
+    const handler = () => {
+      setViewDensity(prev => {
+        const next = prev === 'normal' ? 'compact' : prev === 'compact' ? 'comfortable' : 'normal';
+        localStorage.setItem('owlmail-view-density', next);
+        return next;
+      });
+    };
+    window.addEventListener('owlmail:cycle-density', handler);
+    return () => window.removeEventListener('owlmail:cycle-density', handler);
+  }, []);
+
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
   const [showAllFolders, setShowAllFolders] = useState(false);
+  const [folderSearch, setFolderSearch] = useState('');
   const [quickFilter, setQuickFilter] = useState<'all' | 'unread' | 'starred' | 'attachments' | `label:${EmailLabel}`>('all');
   const [snoozeOpenId, setSnoozeOpenId] = useState<string | null>(null);
+  const [snoozeCustomId, setSnoozeCustomId] = useState<string | null>(null);
+  const [snoozeCustomInput, setSnoozeCustomInput] = useState('');
   const [labelOpenId, setLabelOpenId] = useState<string | null>(null);
+  const [rowColorOpenId, setRowColorOpenId] = useState<string | null>(null);
   const [followupOpenId, setFollowupOpenId] = useState<string | null>(null);
   const [noteOpenId, setNoteOpenId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
@@ -737,6 +1028,7 @@ function MailPanel({
   // Search history dropdown
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchHistoryList, setSearchHistoryList] = useState<string[]>(() => getSearchHistory());
+  const [searchPresets, setSearchPresets] = useState<SearchPreset[]>(() => getSearchPresets());
 
   // Hover preview card
   const [hoverPreview, setHoverPreview] = useState<{ email: Email; x: number; y: number } | null>(null);
@@ -830,6 +1122,11 @@ function MailPanel({
     if (activeFolder === '__scheduled__') return 'Zamanlanmış';
     if (activeFolder === '__important__') return 'Önemli';
     if (activeFolder === '__thisweek__') return 'Bu Hafta';
+    if (activeFolder === '__muted__') return 'Sessize Alınanlar';
+    if (activeFolder === '__needsreply__') return 'Yanıt Bekliyor';
+    if (activeFolder === '__vip__') return 'VIP';
+    if (activeFolder === '__readlater__') return 'Sonra Oku';
+    if (activeFolder === '__invoices__') return 'Faturalar';
     const folder = imapFolders.find(f => f.path === activeFolder);
     return folder?.name || 'Inbox';
   }, [activeFolder, imapFolders]);
@@ -939,14 +1236,27 @@ function MailPanel({
       }
     }
 
-    // Search filter
+    // Search filter with operator support (from:, has:, is:, label:)
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(e =>
-        e.subject.toLowerCase().includes(query) ||
-        e.from.name.toLowerCase().includes(query) ||
-        e.from.email.toLowerCase().includes(query) ||
-        e.body.toLowerCase().includes(query)
+      let q = searchQuery.toLowerCase();
+      const fromOp  = q.match(/\bfrom:(\S+)/)?.[1];
+      const hasAtt  = /\bhas:attachment\b/.test(q);
+      const isUnreadOp   = /\bis:unread\b/.test(q);
+      const isStarredOp  = /\bis:starred\b/.test(q);
+      const isImpOp = /\bis:important\b/.test(q);
+      const labelOp = q.match(/\blabel:(\S+)/)?.[1];
+      q = q.replace(/\b(from|has|is|label):\S+/g, '').trim();
+      if (fromOp) result = result.filter(e => e.from.email.toLowerCase().includes(fromOp) || e.from.name.toLowerCase().includes(fromOp));
+      if (hasAtt)      result = result.filter(e => e.hasAttachments);
+      if (isUnreadOp)  result = result.filter(e => !e.read);
+      if (isStarredOp) result = result.filter(e => e.starred);
+      if (isImpOp)     result = result.filter(e => isImportant(e.id));
+      if (labelOp)     result = result.filter(e => getEmailLabel(e.id) === labelOp);
+      if (q) result = result.filter(e =>
+        e.subject.toLowerCase().includes(q) ||
+        e.from.name.toLowerCase().includes(q) ||
+        e.from.email.toLowerCase().includes(q) ||
+        e.body.toLowerCase().includes(q)
       );
     }
 
@@ -960,8 +1270,31 @@ function MailPanel({
     } else if (activeFolder === '__thisweek__') {
       const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
       result = result.filter(e => e.date.getTime() >= weekAgo && !e.deleted);
+    } else if (activeFolder === '__muted__') {
+      result = result.filter(e => isMuted(e.from.email) && !e.deleted);
+    } else if (activeFolder === '__vip__') {
+      result = result.filter(e => isVip(e.from.email) && !e.deleted);
+    } else if (activeFolder === '__needsreply__') {
+      const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000;
+      result = result.filter(e =>
+        e.read && !e.deleted && !isReplied(e.id) &&
+        e.date.getTime() < fourHoursAgo &&
+        !e.from.email.toLowerCase().includes('noreply') &&
+        !e.from.email.toLowerCase().includes('no-reply') &&
+        !e.from.email.toLowerCase().includes('newsletter') &&
+        !e.from.email.toLowerCase().includes('mailer')
+      );
+    } else if (activeFolder === '__readlater__') {
+      result = result.filter(e => isReadLater(e.id) && !e.deleted);
+    } else if (activeFolder === '__invoices__') {
+      const INV_RE = /\b(invoice|receipt|fatura|makbuz|order|sipari[şs]|payment|billing|ödeme|dekont|tahsilat)\b/i;
+      result = result.filter(e => !e.deleted && (INV_RE.test(e.subject) || INV_RE.test(e.from.email) || INV_RE.test(e.from.name)));
     } else {
       result = result.filter(e => !isSnoozedNow(e.id));
+      // Hide muted sender emails from normal inbox views
+      if (!activeFolder.startsWith('__')) {
+        result = result.filter(e => !isMuted(e.from.email));
+      }
     }
 
     // Quick filter chips (local, instant)
@@ -1005,10 +1338,11 @@ function MailPanel({
       return cmp * dir;
     });
 
-    // Pinned emails always float to top
+    // Pinned → VIP → rest
     const pinned = result.filter(e => isPinned(e.id));
-    const unpinned = result.filter(e => !isPinned(e.id));
-    return pinned.length > 0 ? [...pinned, ...unpinned] : result;
+    const vip = result.filter(e => !isPinned(e.id) && isVip(e.from.email));
+    const rest = result.filter(e => !isPinned(e.id) && !isVip(e.from.email));
+    return [...pinned, ...vip, ...rest];
   }, [emails, activeFolder, searchQuery, isDraftsFolder, drafts, sortBy, sortDirection, quickFilter, inboxTab]);
 
   // ── Collapsed icon rail ──────────────────────────────────────────────────
@@ -1062,16 +1396,60 @@ function MailPanel({
 
           {/* Actions */}
           <div className="flex items-center gap-1.5">
+            {/* View density cycle */}
+            <button
+              onClick={() => {
+                const next = viewDensity === 'normal' ? 'compact' : viewDensity === 'compact' ? 'comfortable' : 'normal';
+                setViewDensity(next);
+                localStorage.setItem('owlmail-view-density', next);
+              }}
+              className="action-btn text-owl-text-secondary/50 hover:text-owl-text-secondary"
+              title={`Yoğunluk: ${viewDensity === 'normal' ? 'Normal' : viewDensity === 'compact' ? 'Kompakt' : 'Geniş'} — tıkla değiştir`}
+            >
+              {viewDensity === 'compact' ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M3 10h18M3 14h18M3 18h18"/></svg>
+              ) : viewDensity === 'comfortable' ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 5h18M3 12h18M3 19h18"/></svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M3 10h18M3 14h18"/></svg>
+              )}
+            </button>
             {onToggleCollapse && (
               <button onClick={onToggleCollapse} className="action-btn text-owl-text-secondary/50 hover:text-owl-text-secondary" title="Daralt">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6"/></svg>
               </button>
             )}
+            {onToggleReadingPaneLayout && (
+              <button
+                onClick={onToggleReadingPaneLayout}
+                className={`action-btn ${readingPaneLayout === 'bottom' ? 'text-owl-accent' : 'text-owl-text-secondary/50 hover:text-owl-text-secondary'}`}
+                title={readingPaneLayout === 'bottom' ? 'Okuma bölmesini sağa al' : 'Okuma bölmesini alta al'}
+              >
+                {readingPaneLayout === 'bottom' ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="13" x2="21" y2="13"/></svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+                )}
+              </button>
+            )}
+            {onToggleSyncPause && (
+              <button
+                onClick={onToggleSyncPause}
+                className={`action-btn ${syncPaused ? 'text-owl-accent' : ''}`}
+                title={syncPaused ? 'Sync duraklatıldı — devam ettirmek için tıkla' : 'Sync\'i duraklat'}
+              >
+                {syncPaused ? (
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                )}
+              </button>
+            )}
             <button
               onClick={onSyncClick}
-              disabled={isSyncing}
+              disabled={isSyncing || syncPaused || !isOnline}
               className="action-btn"
-              title={t('sidebar.sync')}
+              title={!isOnline ? 'Çevrimdışı' : syncPaused ? 'Sync duraklatıldı' : t('sidebar.sync')}
             >
               <span className={isSyncing ? 'sync-spinning block' : 'block'}>
                 <Icons.Refresh />
@@ -1110,41 +1488,85 @@ function MailPanel({
               }}
             />
             {searchQuery ? (
-              <button
-                onClick={() => { onSearchChange(''); }}
-                className="text-owl-text-secondary/50 hover:text-owl-text-secondary transition-colors shrink-0"
-              >
-                <Icons.X />
-              </button>
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => {
+                    const name = searchQuery.trim().slice(0, 40);
+                    saveSearchPreset(name, searchQuery.trim());
+                    setSearchPresets(getSearchPresets());
+                  }}
+                  className="text-owl-text-secondary/40 hover:text-yellow-400 transition-colors shrink-0"
+                  title="Bu aramayı kaydet"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+                </button>
+                <button
+                  onClick={() => { onSearchChange(''); }}
+                  className="text-owl-text-secondary/50 hover:text-owl-text-secondary transition-colors shrink-0"
+                >
+                  <Icons.X />
+                </button>
+              </div>
             ) : (
               <kbd className="text-[10px] text-owl-text-secondary/50 bg-owl-surface-2/80 px-1.5 py-0.5 rounded font-mono shrink-0">/</kbd>
             )}
           </div>
 
-          {/* Search History Dropdown */}
-          {searchFocused && !searchQuery && searchHistoryList.length > 0 && (
-            <div className="absolute top-full left-0 right-0 z-50 dropdown-panel shadow-owl-lg overflow-hidden mx-2">
-              <div className="flex items-center justify-between px-3 py-1.5 border-b border-owl-border/30">
-                <span className="text-[10px] uppercase tracking-wider text-owl-text-secondary/50 font-semibold">Son Aramalar</span>
-                <button
-                  onClick={() => { clearSearchHistory(); setSearchHistoryList([]); }}
-                  className="text-[10px] text-owl-text-secondary/40 hover:text-red-400 transition-colors"
-                >
-                  Temizle
-                </button>
-              </div>
-              {searchHistoryList.map((q, i) => (
-                <button
-                  key={i}
-                  onClick={() => { onSearchChange(q); addSearchHistory(q); setSearchFocused(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text transition-colors text-left"
-                >
-                  <svg className="w-3.5 h-3.5 shrink-0 text-owl-text-secondary/40" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                  </svg>
-                  <span className="truncate">{q}</span>
-                </button>
-              ))}
+          {/* Search History + Presets Dropdown */}
+          {searchFocused && !searchQuery && (searchHistoryList.length > 0 || searchPresets.length > 0) && (
+            <div className="absolute top-full left-0 right-0 z-50 dropdown-panel shadow-owl-lg overflow-hidden mx-2 max-h-64 overflow-y-auto">
+              {searchPresets.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-owl-border/30 sticky top-0 bg-owl-surface">
+                    <span className="text-[10px] uppercase tracking-wider text-owl-text-secondary/50 font-semibold flex items-center gap-1">
+                      <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+                      Kayıtlı Aramalar
+                    </span>
+                  </div>
+                  {searchPresets.map((p, i) => (
+                    <div key={i} className="flex items-center hover:bg-owl-surface-2/60 transition-colors group">
+                      <button
+                        onClick={() => { onSearchChange(p.query); addSearchHistory(p.query); setSearchFocused(false); }}
+                        className="flex-1 flex items-center gap-2.5 px-3 py-2 text-sm text-owl-text-secondary hover:text-owl-text transition-colors text-left"
+                      >
+                        <svg className="w-3.5 h-3.5 shrink-0 text-yellow-400/60" fill="currentColor" viewBox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+                        <span className="truncate">{p.name}</span>
+                        <span className="text-[10px] text-owl-text-secondary/40 truncate ml-auto">{p.query}</span>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteSearchPreset(p.query); setSearchPresets(getSearchPresets()); }}
+                        className="pr-3 opacity-0 group-hover:opacity-100 text-owl-text-secondary/30 hover:text-red-400 transition-all"
+                        title="Sil"
+                      >×</button>
+                    </div>
+                  ))}
+                </>
+              )}
+              {searchHistoryList.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-owl-border/30 sticky top-0 bg-owl-surface">
+                    <span className="text-[10px] uppercase tracking-wider text-owl-text-secondary/50 font-semibold">Son Aramalar</span>
+                    <button
+                      onClick={() => { clearSearchHistory(); setSearchHistoryList([]); }}
+                      className="text-[10px] text-owl-text-secondary/40 hover:text-red-400 transition-colors"
+                    >
+                      Temizle
+                    </button>
+                  </div>
+                  {searchHistoryList.map((q, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { onSearchChange(q); addSearchHistory(q); setSearchFocused(false); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text transition-colors text-left"
+                    >
+                      <svg className="w-3.5 h-3.5 shrink-0 text-owl-text-secondary/40" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                      </svg>
+                      <span className="truncate">{q}</span>
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1357,19 +1779,25 @@ function MailPanel({
           {/* Main folders */}
           {mainFolders.slice(0, 4).map((folder) => {
             const isActive = activeFolder === folder.path;
+            const isDragTarget = dragOverFolder === folder.path;
             return (
               <button
                 key={folder.path}
                 onClick={() => onFolderChange(folder.path)}
-                className={`folder-tab flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] ${
-                  isActive
+                onDragOver={(e) => { if (onEmailDrop) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverFolder(folder.path); } }}
+                onDragLeave={() => setDragOverFolder(null)}
+                onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData('text/email-id'); if (id && onEmailDrop) onEmailDrop(id, folder.path); setDragOverFolder(null); }}
+                className={`folder-tab flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] transition-all ${
+                  isDragTarget
+                    ? "folder-tab-active font-semibold ring-2 ring-owl-accent/60 scale-105"
+                    : isActive
                     ? "folder-tab-active font-semibold"
                     : "text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text"
                 }`}
                 title={folder.name}
               >
                 {folder.icon}
-                {isActive && <span>{folder.name}</span>}
+                {(isActive || isDragTarget) && <span>{folder.name}</span>}
                 {folder.count > 0 && (
                   <span className={`text-[10px] min-w-[16px] text-center px-1 py-px rounded-full leading-tight tabular-nums ${
                     isActive
@@ -1472,6 +1900,32 @@ function MailPanel({
             );
           })()}
 
+          {/* VIP Contacts */}
+          {(() => {
+            const isActive = activeFolder === '__vip__';
+            const count = emails.filter(e => isVip(e.from.email) && !e.deleted).length;
+            if (count === 0 && !isActive) return null;
+            return (
+              <button
+                onClick={() => onFolderChange('__vip__')}
+                className={`folder-tab flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] ${
+                  isActive ? "folder-tab-active font-semibold" : "text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text"
+                }`}
+                title="VIP Kişiler"
+              >
+                <svg className="w-4 h-4" fill={isActive ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                </svg>
+                {isActive && <span>VIP</span>}
+                {count > 0 && (
+                  <span className={`text-[10px] min-w-[16px] text-center px-1 py-px rounded-full leading-tight ${
+                    isActive ? 'bg-owl-accent text-white font-bold' : 'bg-yellow-500/20 text-yellow-500 font-semibold'
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })()}
+
           {/* Scheduled Send */}
           {(() => {
             const isActive = activeFolder === '__scheduled__';
@@ -1551,6 +2005,119 @@ function MailPanel({
             );
           })()}
 
+          {/* Sessize Alınanlar */}
+          {(() => {
+            const isActive = activeFolder === '__muted__';
+            const count = emails.filter(e => isMuted(e.from.email) && !e.deleted).length;
+            if (count === 0 && !isActive) return null;
+            return (
+              <button
+                onClick={() => onFolderChange('__muted__')}
+                className={`folder-tab flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] ${
+                  isActive ? "folder-tab-active font-semibold" : "text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text"
+                }`}
+                title="Sessize Alınanlar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
+                </svg>
+                {isActive && <span>Sessize Alınanlar</span>}
+                {count > 0 && (
+                  <span className={`text-[10px] min-w-[16px] text-center px-1 py-px rounded-full leading-tight ${
+                    isActive ? 'bg-owl-accent text-white font-bold' : 'bg-owl-surface-2 text-owl-text-secondary'
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })()}
+
+          {/* Yanıt Bekliyor */}
+          {(() => {
+            const isActive = activeFolder === '__needsreply__';
+            const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000;
+            const count = emails.filter(e =>
+              e.read && !e.deleted && !isReplied(e.id) &&
+              e.date.getTime() < fourHoursAgo &&
+              !e.from.email.toLowerCase().includes('noreply') &&
+              !e.from.email.toLowerCase().includes('no-reply') &&
+              !e.from.email.toLowerCase().includes('newsletter') &&
+              !e.from.email.toLowerCase().includes('mailer')
+            ).length;
+            if (count === 0 && !isActive) return null;
+            return (
+              <button
+                onClick={() => onFolderChange('__needsreply__')}
+                className={`folder-tab flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] ${
+                  isActive ? "folder-tab-active font-semibold" : "text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text"
+                }`}
+                title="Yanıt Bekliyor"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                </svg>
+                {isActive && <span>Yanıt Bekliyor</span>}
+                {count > 0 && (
+                  <span className={`text-[10px] min-w-[16px] text-center px-1 py-px rounded-full leading-tight ${
+                    isActive ? 'bg-owl-accent text-white font-bold' : 'bg-amber-500/20 text-amber-500 font-semibold'
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })()}
+
+          {/* Sonra Oku */}
+          {(() => {
+            const isActive = activeFolder === '__readlater__';
+            const count = emails.filter(e => isReadLater(e.id) && !e.deleted).length;
+            if (count === 0 && !isActive) return null;
+            return (
+              <button
+                onClick={() => onFolderChange('__readlater__')}
+                className={`folder-tab flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] ${
+                  isActive ? "folder-tab-active font-semibold" : "text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text"
+                }`}
+                title="Sonra Oku"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                </svg>
+                {isActive && <span>Sonra Oku</span>}
+                {count > 0 && (
+                  <span className={`text-[10px] min-w-[16px] text-center px-1 py-px rounded-full leading-tight ${
+                    isActive ? 'bg-owl-accent text-white font-bold' : 'bg-owl-surface-2 text-owl-text-secondary'
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })()}
+
+          {(() => {
+            const isActive = activeFolder === '__invoices__';
+            const INV_RE = /\b(invoice|receipt|fatura|makbuz|order|sipari[şs]|payment|billing|ödeme|dekont|tahsilat)\b/i;
+            const count = emails.filter(e => !e.deleted && (INV_RE.test(e.subject) || INV_RE.test(e.from.email) || INV_RE.test(e.from.name))).length;
+            if (count === 0 && !isActive) return null;
+            return (
+              <button
+                onClick={() => onFolderChange('__invoices__')}
+                className={`folder-tab flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] ${
+                  isActive ? "folder-tab-active font-semibold" : "text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text"
+                }`}
+                title="Faturalar ve Makbuzlar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/>
+                </svg>
+                {isActive && <span>Faturalar</span>}
+                {count > 0 && (
+                  <span className={`text-[10px] min-w-[16px] text-center px-1 py-px rounded-full leading-tight ${
+                    isActive ? 'bg-owl-accent text-white font-bold' : 'bg-owl-surface-2 text-owl-text-secondary'
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })()}
+
           <div className="flex-1" />
 
           {/* All Folders toggle */}
@@ -1569,7 +2136,19 @@ function MailPanel({
 
       {/* Expandable All Folders Panel */}
       {showAllFolders && (
-        <div className="border-b border-owl-border bg-owl-bg/50 max-h-[300px] overflow-y-auto">
+        <div className="border-b border-owl-border bg-owl-bg/50 max-h-[320px] overflow-y-auto">
+          <div className="sticky top-0 bg-owl-bg/90 backdrop-blur-sm px-2 pt-2 pb-1 z-10">
+            <div className="relative">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-owl-text-secondary/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <input
+                type="text"
+                value={folderSearch}
+                onChange={e => setFolderSearch(e.target.value)}
+                placeholder="Klasör ara…"
+                className="w-full pl-7 pr-2 py-1 text-[11px] bg-owl-surface border border-owl-border/60 rounded-lg text-owl-text placeholder-owl-text-secondary/40 focus:outline-none focus:border-owl-accent/50"
+              />
+            </div>
+          </div>
           {isLoadingFolders ? (
             <div className="flex items-center justify-center py-4 text-owl-text-secondary text-sm">
               <svg className="w-4 h-4 animate-spin mr-2" fill="none" viewBox="0 0 24 24">
@@ -1584,7 +2163,40 @@ function MailPanel({
             </div>
           ) : (
             <div className="py-2">
-              {folderTree.map((node) => (
+              {favFolders.length > 0 && (
+                <div className="pb-1 mb-1 border-b border-owl-border/30">
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-yellow-400/70 font-semibold">⭐ Favoriler</div>
+                  {favFolders.map(path => {
+                    const fol = imapFolders.find(f => f.path === path);
+                    if (!fol) return null;
+                    const isAct = activeFolder === fol.path;
+                    return (
+                      <button key={path} onClick={() => { onFolderChange(fol.path); setShowAllFolders(false); }}
+                        className={`w-full flex items-center gap-2 py-1.5 px-3 rounded-lg transition-all text-sm ${isAct ? 'bg-owl-accent/15 text-owl-accent font-medium' : 'text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text'}`}>
+                        {getFolderIcon(fol.folder_type, fol.name)}
+                        <span className="flex-1 truncate text-left">{fol.name}</span>
+                        {fol.unread_count > 0 && <span className="text-xs px-1.5 py-0.5 rounded-full bg-owl-bg">{fol.unread_count}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {folderSearch.trim().length >= 1 ? (
+                imapFolders
+                  .filter(f => f.name.toLowerCase().includes(folderSearch.toLowerCase()) || f.path.toLowerCase().includes(folderSearch.toLowerCase()))
+                  .map(f => {
+                    const isAct = activeFolder === f.path;
+                    return (
+                      <button key={f.path} onClick={() => { onFolderChange(f.path); setShowAllFolders(false); setFolderSearch(''); }}
+                        className={`w-full flex items-center gap-2 py-1.5 px-3 rounded-lg transition-all text-sm ${isAct ? 'bg-owl-accent/15 text-owl-accent font-medium' : 'text-owl-text-secondary hover:bg-owl-surface-2/60 hover:text-owl-text'}`}>
+                        {getFolderIcon(f.folder_type, f.name)}
+                        <span className="flex-1 truncate text-left">{f.name}</span>
+                        <span className="text-[10px] text-owl-text-secondary/40 truncate max-w-[80px]">{f.path}</span>
+                        {f.unread_count > 0 && <span className="text-xs px-1.5 py-0.5 rounded-full bg-owl-bg shrink-0">{f.unread_count}</span>}
+                      </button>
+                    );
+                  })
+              ) : folderTree.map((node) => (
                 <FolderTreeItem
                   key={node.folder.path}
                   node={node}
@@ -1594,6 +2206,9 @@ function MailPanel({
                     onFolderChange(path);
                     setShowAllFolders(false);
                   }}
+                  onEmailDrop={onEmailDrop}
+                  onMarkFolderRead={onMarkFolderRead}
+                  onToggleFavFolder={onToggleFavFolder}
                 />
               ))}
             </div>
@@ -1615,11 +2230,26 @@ function MailPanel({
                   <button onClick={() => onBulkAction('star')} className="px-2 py-1 rounded-lg text-xs text-owl-text hover:bg-yellow-400/20 hover:text-yellow-400 transition-colors" title="Yıldız ekle">
                     <svg className="inline w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.37 2.448a1 1 0 00-.364 1.118l1.287 3.957c.3.921-.755 1.688-1.54 1.118l-3.37-2.448a1 1 0 00-1.175 0l-3.37 2.448c-.784.57-1.838-.197-1.539-1.118l1.287-3.957a1 1 0 00-.364-1.118L2.063 9.384c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69l1.286-3.957z"/></svg>
                   </button>
+                  <button onClick={() => onBulkAction('unstar')} className="px-2 py-1 rounded-lg text-xs text-owl-text hover:bg-yellow-400/20 hover:text-yellow-400/70 transition-colors" title="Yıldızı kaldır">
+                    <svg className="inline w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z M6 6l12 12"/></svg>
+                  </button>
+                  <button onClick={() => onBulkAction('pin')} className="px-2 py-1 rounded-lg text-xs text-owl-text hover:bg-owl-accent/20 hover:text-owl-accent transition-colors" title="Sabitle/Kaldır">
+                    <svg className="inline w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
+                  </button>
+                  <button onClick={() => onBulkAction('snooze1h')} className="px-2 py-1 rounded-lg text-xs text-owl-text hover:bg-owl-accent/20 hover:text-owl-accent transition-colors" title="1 saat ertele">
+                    <svg className="inline w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  </button>
                   <button onClick={() => onBulkAction('archive')} className="px-2 py-1 rounded-lg text-xs text-owl-text hover:bg-owl-accent/20 hover:text-owl-accent transition-colors" title="Arşivle">
                     <svg className="inline w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
                   </button>
                   <button onClick={() => onBulkAction('delete')} className="px-2 py-1 rounded-lg text-xs text-owl-text hover:bg-red-500/20 hover:text-red-400 transition-colors" title="Sil">
                     <svg className="inline w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                  </button>
+                  <button onClick={() => onBulkAction('readlater')} className="px-2 py-1 rounded-lg text-xs text-owl-text hover:bg-owl-accent/20 hover:text-owl-accent transition-colors" title="Sonra Oku">
+                    <svg className="inline w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
+                  </button>
+                  <button onClick={() => onBulkAction('important')} className="px-2 py-1 rounded-lg text-xs text-owl-text hover:bg-orange-500/20 hover:text-orange-400 transition-colors" title="Önemli İşaretle">
+                    <svg className="inline w-3.5 h-3.5 text-orange-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
                   </button>
                 </div>
                 <button onClick={onBulkClear} className="ml-auto p-1 rounded-lg text-owl-text-secondary hover:text-owl-text hover:bg-owl-bg transition-colors" title="Seçimi temizle">
@@ -1632,6 +2262,7 @@ function MailPanel({
           <div className="flex items-center justify-between px-2 py-2">
             <div className="section-label text-owl-text-secondary flex items-center gap-2">
               {activeFolderName}
+              {(() => { const u = filteredEmails.filter(e => !e.read).length; return u > 0 ? <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-owl-accent text-white font-semibold tabular-nums leading-none">{u}</span> : null; })()}
               {filteredEmails.length > 0 && (
                 <button
                   onClick={() =>
@@ -1642,6 +2273,14 @@ function MailPanel({
                   className="text-[11px] text-owl-accent/70 hover:text-owl-accent transition-colors font-normal"
                 >
                   {selectedEmails.size === filteredEmails.length ? 'Seçimi kaldır' : 'Tümünü seç'}
+                </button>
+              )}
+              {filteredEmails.some(e => !e.read) && (
+                <button
+                  onClick={() => onBulkSelectAll(filteredEmails.filter(e => !e.read).map(e => e.id))}
+                  className="text-[11px] text-owl-text-secondary/60 hover:text-owl-text-secondary transition-colors font-normal"
+                >
+                  Okunmayanları seç
                 </button>
               )}
             </div>
@@ -1655,6 +2294,17 @@ function MailPanel({
                   `${filteredEmails.length} emails`
                 )}
               </span>
+              {/* Prev/Next unread navigation */}
+              {onNavigateUnread && filteredEmails.some(e => !e.read) && (
+                <div className="flex items-center">
+                  <button onClick={() => onNavigateUnread('prev')} className="p-1 rounded hover:bg-owl-bg text-owl-text-secondary/60 hover:text-owl-accent transition-colors" title="Önceki okunmamış ([)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+                  </button>
+                  <button onClick={() => onNavigateUnread('next')} className="p-1 rounded hover:bg-owl-bg text-owl-text-secondary/60 hover:text-owl-accent transition-colors" title="Sonraki okunmamış (])">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                </div>
+              )}
               {/* Mark all read button */}
               {filteredEmails.some(e => !e.read) && onMarkAllRead && (
                 <button
@@ -1668,6 +2318,41 @@ function MailPanel({
                   </svg>
                 </button>
               )}
+              {/* Clear Read Later button (only in __readlater__ folder) */}
+              {activeFolder === '__readlater__' && filteredEmails.length > 0 && (
+                <button
+                  onClick={() => { filteredEmails.forEach(e => { if (isReadLater(e.id)) toggleReadLater(e.id); }); forceUpdate(n => n + 1); }}
+                  className="p-1 rounded hover:bg-owl-bg text-owl-text-secondary/50 hover:text-red-400 transition-colors text-xs"
+                  title="Tüm 'Sonra Oku' işaretlerini kaldır"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                </button>
+              )}
+              {/* Thread collapse/expand all (only in conversation view) */}
+              {conversationView && filteredEmails.length > 0 && (() => {
+                const threads = groupIntoThreads(filteredEmails);
+                const multiThreads = threads.filter(t => t.emails.length > 1);
+                if (multiThreads.length === 0) return null;
+                const allExpanded = multiThreads.every(t => expandedThreads.has(t.key));
+                return (
+                  <button
+                    onClick={() => {
+                      if (allExpanded) setExpandedThreads(new Set());
+                      else setExpandedThreads(new Set(multiThreads.map(t => t.key)));
+                    }}
+                    className="p-1 rounded hover:bg-owl-bg text-owl-text-secondary hover:text-owl-text transition-colors"
+                    title={allExpanded ? 'Tüm konuşmaları daralt' : 'Tüm konuşmaları genişlet'}
+                  >
+                    {allExpanded ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    )}
+                  </button>
+                );
+              })()}
               {/* Sort button */}
               <div className="relative" ref={sortMenuRef}>
                 <button
@@ -1718,6 +2403,40 @@ function MailPanel({
               </div>
             </div>
           </div>
+          {/* Quick sort header row */}
+          <div className="flex items-center gap-0 px-3 py-1 border-b border-owl-border/20 bg-owl-bg/60 sticky top-0 z-[3]">
+            {([
+              { label: 'Kimden', value: 'account' as const },
+              { label: 'Tarih', value: 'date' as const },
+              { label: 'Öncelik', value: 'priority' as const },
+            ]).map(col => (
+              <button
+                key={col.value}
+                onClick={() => {
+                  if (sortBy === col.value) {
+                    onSortDirectionChange(sortDirection === 'desc' ? 'asc' : 'desc');
+                  } else {
+                    onSortByChange(col.value);
+                  }
+                }}
+                className={`flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                  sortBy === col.value
+                    ? 'text-owl-accent'
+                    : 'text-owl-text-secondary/40 hover:text-owl-text-secondary'
+                }`}
+              >
+                {col.label}
+                {sortBy === col.value && (
+                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    {sortDirection === 'desc'
+                      ? <path d="M5 2v6M2 6l3 3 3-3"/>
+                      : <path d="M5 8V2M2 4l3-3 3 3"/>
+                    }
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
           {(() => {
             const renderEmailItem = (email: Email) => {
             const isSelected = selectedId === email.id;
@@ -1735,6 +2454,11 @@ function MailPanel({
                   }
                 }}
                 onContextMenu={onEmailContextMenu ? (e) => onEmailContextMenu(e, email) : undefined}
+                draggable={!!onEmailDrop}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/email-id', email.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
                 onMouseEnter={(e) => {
                   if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -1746,14 +2470,21 @@ function MailPanel({
                   if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
                   setHoverPreview(null);
                 }}
-                className={`email-item w-full text-left mb-1 ${
+                className={`email-item group/emailrow w-full text-left mb-1 ${
                   isSelected ? 'email-item-selected' : ''
                 } ${isBulkSelected && !isSelected ? 'email-item-bulk-selected' : ''} ${isUnread && !isSelected ? 'email-item-unread' : ''} ${isPinned(email.id) ? 'email-item-pinned' : ''}`}
+                style={(() => {
+                  const rc = getRowColor(email.id);
+                  if (!rc) return undefined;
+                  const cfg = ROW_COLORS.find(c => c.id === rc);
+                  if (!cfg) return undefined;
+                  return { background: cfg.bg, borderLeft: `3px solid ${cfg.border}`, paddingLeft: '1px' };
+                })()}
               >
                 {isPinned(email.id) && (
                   <div className="absolute top-0 left-0 w-0.5 h-full bg-owl-accent rounded-l opacity-60" />
                 )}
-                <div className={`flex items-start gap-3 ${compactView ? 'px-2 py-1.5' : 'p-3'}`}>
+                <div className={`flex items-start gap-3 ${viewDensity === 'compact' || compactView ? 'px-2 py-1.5' : viewDensity === 'comfortable' ? 'px-3 py-4' : 'p-3'}`}>
                   {/* Avatar with checkbox overlay on hover/bulk-select */}
                   <div className="relative shrink-0 group/avatar">
                     <div
@@ -1783,6 +2514,10 @@ function MailPanel({
                       </div>
                     </div>
                     {isUnread && !isBulkSelected && <span className="unread-dot" />}
+                    {/* VIP star badge */}
+                    {isVip(email.from.email) && !isBulkSelected && (
+                      <span className="absolute -top-1 -left-1 text-[10px] leading-none z-20" title={`${email.from.name || email.from.email} — VIP`}>⭐</span>
+                    )}
                     {/* Account color dot (multi-account mode) */}
                     {accounts.length > 1 && email.accountId && !emailLabel && (
                       <span
@@ -1807,8 +2542,20 @@ function MailPanel({
                     <div className="flex items-center justify-between mb-0.5">
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         <span className={`text-[13px] truncate ${isUnread ? 'font-bold text-owl-text' : 'font-medium text-owl-text/90'}`}>
-                          {email.from.name || email.from.email}
+                          {highlightText(email.from.name || email.from.email, searchQuery)}
                         </span>
+                        {(() => {
+                          const em = email.from.email.toLowerCase();
+                          const subj = (email.subject || '').toLowerCase();
+                          const prev = (email.preview || '').toLowerCase();
+                          if (/noreply|no-reply|newsletter|digest|update|notifications?@|mailer-daemon|donotreply/.test(em) || /unsubscribe|list-unsubscribe/.test(prev)) {
+                            return <span className="shrink-0 text-[9px] px-1 py-px rounded bg-blue-500/15 text-blue-400/80 font-medium leading-none" title="Bülten">NL</span>;
+                          }
+                          if (/receipt|invoice|order|shipment|tracking|billing|payment|transaction|confirm/.test(subj) || /transact|invoices?@|billing@|orders?@/.test(em)) {
+                            return <span className="shrink-0 text-[9px] px-1 py-px rounded bg-amber-500/15 text-amber-400/80 font-medium leading-none" title="İşlemsel">TX</span>;
+                          }
+                          return null;
+                        })()}
                         {(() => {
                           if (selectedAccountId !== 'all' || !email.accountId) return null;
                           const account = accounts.find(a => a.id.toString() === email.accountId || a.id === parseInt(email.accountId || '0'));
@@ -1829,21 +2576,89 @@ function MailPanel({
                             Yeni
                           </span>
                         )}
-                        <span className={`text-[11px] tabular-nums ${isUnread ? 'text-owl-accent font-semibold' : 'text-owl-text-secondary/70'}`}>
+                        {/* Date — hidden on hover, replaced by quick actions */}
+                        <span
+                          className={`text-[11px] tabular-nums group-hover/emailrow:hidden ${isUnread ? 'text-owl-accent font-semibold' : (() => { const ms = Date.now() - email.date.getTime(); const D = 86400000; return ms < D ? 'text-owl-text-secondary/80' : ms < 2*D ? 'text-owl-text-secondary/65' : ms < 7*D ? 'text-owl-text-secondary/55' : 'text-owl-text-secondary/40'; })()}`}
+                          title={email.date.toLocaleString('tr-TR', { dateStyle: 'full', timeStyle: 'short' })}
+                        >
                           {formatDate(email.date, t, lang)}
                         </span>
+                        {/* Quick row actions (hover only) */}
+                        {!email.isDraft && !isBulkSelected && (
+                          <div className="hidden group-hover/emailrow:flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => { onToggleStar && onToggleStar(email.id); }}
+                              className={`p-1 rounded hover:bg-owl-accent/10 transition-colors ${email.starred ? 'text-yellow-400' : 'text-owl-text-secondary/50 hover:text-yellow-400'}`}
+                              title={email.starred ? 'Yıldızı kaldır' : 'Yıldızla'}
+                            >
+                              <Icons.Star />
+                            </button>
+                            <button
+                              onClick={() => { onArchive && onArchive(email.id); }}
+                              className="p-1 rounded hover:bg-owl-accent/10 text-owl-text-secondary/50 hover:text-owl-accent transition-colors"
+                              title="Arşivle (E)"
+                            >
+                              <Icons.Archive />
+                            </button>
+                            <button
+                              onClick={() => { onDelete && onDelete(email.id); }}
+                              className="p-1 rounded hover:bg-red-500/10 text-owl-text-secondary/50 hover:text-red-400 transition-colors"
+                              title="Sil"
+                            >
+                              <Icons.Trash />
+                            </button>
+                            <button
+                              onClick={() => { toggleReadLater(email.id); forceUpdate(n => n + 1); }}
+                              className={`p-1 rounded hover:bg-owl-accent/10 transition-colors ${isReadLater(email.id) ? 'text-owl-accent' : 'text-owl-text-secondary/50 hover:text-owl-accent'}`}
+                              title={isReadLater(email.id) ? 'Sonra Oku\'dan kaldır' : 'Sonra Oku'}
+                            >
+                              <svg className="w-3.5 h-3.5" fill={isReadLater(email.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                              </svg>
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(email.subject || ''); }}
+                              className="p-1 rounded hover:bg-owl-accent/10 text-owl-text-secondary/50 hover:text-owl-text-secondary transition-colors"
+                              title="Konuyu kopyala"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                              </svg>
+                            </button>
+                            {onQuickComposeTo && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onQuickComposeTo({ email: email.from.email, name: email.from.name }); }}
+                                className="p-1 rounded hover:bg-owl-accent/10 text-owl-text-secondary/50 hover:text-owl-accent transition-colors"
+                                title={`Yaz: ${email.from.name || email.from.email}`}
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     {/* Row 2: Subject */}
                     <div className={`text-[13px] truncate leading-snug ${isUnread ? 'subject-unread' : 'text-owl-text-secondary/80 font-normal'}`}>
-                      {email.subject || t('mailPanel.noSubject')}
+                      {highlightText(email.subject || t('mailPanel.noSubject'), searchQuery)}
                     </div>
 
                     {/* Row 3: Preview + icons */}
                     <div className="flex items-center gap-1.5 mt-0.5 group/row3">
+                      {!conversationView && (email.subject.startsWith('Re:') || email.subject.startsWith('Fwd:')) && (
+                        <span className="shrink-0 text-owl-text-secondary/35" title={email.subject.startsWith('Fwd:') ? 'Yönlendirilen' : 'Yanıt konuşması'}>
+                          {email.subject.startsWith('Fwd:') ? (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                          ) : (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                          )}
+                        </span>
+                      )}
                       <span className="text-[12px] text-owl-text-secondary/55 truncate flex-1 leading-snug">
-                        {email.preview}
+                        {highlightText(email.preview, searchQuery)}
                       </span>
                       {email.id.startsWith('sched-') && (
                         <span className="text-owl-accent/60 shrink-0 text-[11px] font-medium flex items-center gap-0.5">
@@ -1851,8 +2666,11 @@ function MailPanel({
                         </span>
                       )}
                       {!email.id.startsWith('sched-') && email.hasAttachments && (
-                        <span className="text-owl-text-secondary/40 shrink-0">
+                        <span className="text-owl-text-secondary/40 shrink-0 flex items-center gap-0.5" title="Ek var">
                           <Icons.Paperclip />
+                          {email.attachments && email.attachments.length > 1 && (
+                            <span className="text-[10px] font-semibold tabular-nums">{email.attachments.length}</span>
+                          )}
                         </span>
                       )}
                       {getNote(email.id) && (
@@ -1860,6 +2678,27 @@ function MailPanel({
                           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                         </span>
                       )}
+                      {isMuted(email.from.email) && (
+                        <span className="text-owl-text-secondary/40 shrink-0" title={`${email.from.email} sessize alındı`}>
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
+                          </svg>
+                        </span>
+                      )}
+                      {(() => {
+                        const tone = detectEmailTone(email.subject, email.preview || '', email.from.email);
+                        if (!tone) return null;
+                        return (
+                          <span
+                            className="shrink-0 text-[11px] leading-none"
+                            title={`${tone.label}: ${tone.emoji}`}
+                            style={{ opacity: 0.7 }}
+                          >
+                            {tone.emoji}
+                          </span>
+                        );
+                      })()}
                       {isFollowupDue(email.id) && (
                         <span className="text-orange-400 shrink-0" title="Takip süresi doldu">
                           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
@@ -1868,6 +2707,11 @@ function MailPanel({
                       {!isFollowupDue(email.id) && getFollowup(email.id) && (
                         <span className="text-owl-accent/50 shrink-0" title={`Takip: ${getFollowup(email.id)!.days} gün`}>
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                        </span>
+                      )}
+                      {isReplied(email.id) && (
+                        <span className="shrink-0 text-owl-accent/35" title="Yanıtlandı">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
                         </span>
                       )}
                       {email.isDraft ? (
@@ -1909,7 +2753,7 @@ function MailPanel({
                           {/* Label picker */}
                           <div className="relative shrink-0">
                             <span
-                              onClick={(e) => { e.stopPropagation(); setLabelOpenId(labelOpenId === email.id ? null : email.id); setSnoozeOpenId(null); }}
+                              onClick={(e) => { e.stopPropagation(); setLabelOpenId(labelOpenId === email.id ? null : email.id); setSnoozeOpenId(null); setRowColorOpenId(null); }}
                               className="p-0.5 rounded cursor-pointer transition-colors block"
                               title="Etiketle"
                               style={{ color: emailLabel ? LABEL_COLORS[emailLabel].dot : undefined }}
@@ -1947,10 +2791,55 @@ function MailPanel({
                               </div>
                             )}
                           </div>
+                          {/* Row Color Highlight picker */}
+                          <div className="relative shrink-0">
+                            <span
+                              onClick={(e) => { e.stopPropagation(); setRowColorOpenId(rowColorOpenId === email.id ? null : email.id); setSnoozeOpenId(null); setLabelOpenId(null); }}
+                              className="p-0.5 rounded cursor-pointer transition-colors block"
+                              title="Renk vurgusu"
+                              style={{ color: (() => { const rc = getRowColor(email.id); return rc ? ROW_COLORS.find(c => c.id === rc)?.border || 'var(--owl-text-secondary)' : undefined; })() }}
+                            >
+                              <svg className={`w-3.5 h-3.5 ${getRowColor(email.id) ? '' : 'text-owl-text-secondary/30 hover:text-owl-accent'}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
+                              </svg>
+                            </span>
+                            {rowColorOpenId === email.id && (
+                              <div
+                                className="absolute bottom-full right-0 mb-1 dropdown-panel z-50 py-2 px-2 animate-scale-in"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="text-[10px] uppercase tracking-wider text-owl-text-secondary/60 font-semibold mb-1.5 px-0.5">Renk Vurgusu</div>
+                                <div className="flex gap-1.5">
+                                  {ROW_COLORS.map(c => (
+                                    <button
+                                      key={c.id}
+                                      onClick={() => { setRowColorStorage(email.id, getRowColor(email.id) === c.id ? null : c.id); setRowColorOpenId(null); forceUpdate(n => n + 1); }}
+                                      className="w-5 h-5 rounded-full border-2 transition-all hover:scale-110"
+                                      style={{
+                                        background: c.border,
+                                        borderColor: getRowColor(email.id) === c.id ? 'white' : 'transparent',
+                                        boxShadow: getRowColor(email.id) === c.id ? `0 0 0 1px ${c.border}` : 'none',
+                                      }}
+                                      title={c.label}
+                                    />
+                                  ))}
+                                  {getRowColor(email.id) && (
+                                    <button
+                                      onClick={() => { setRowColorStorage(email.id, null); setRowColorOpenId(null); forceUpdate(n => n + 1); }}
+                                      className="w-5 h-5 rounded-full border-2 border-owl-border flex items-center justify-center text-owl-text-secondary hover:border-red-400 hover:text-red-400 transition-all hover:scale-110"
+                                      title="Rengi kaldır"
+                                    >
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                           {/* Snooze button */}
                           <div className="relative shrink-0">
                             <span
-                              onClick={(e) => { e.stopPropagation(); setSnoozeOpenId(snoozeOpenId === email.id ? null : email.id); }}
+                              onClick={(e) => { e.stopPropagation(); setSnoozeOpenId(snoozeOpenId === email.id ? null : email.id); setRowColorOpenId(null); }}
                               className="p-0.5 rounded cursor-pointer text-owl-text-secondary/30 hover:text-owl-accent transition-colors block"
                               title="Ertele"
                             >
@@ -1981,10 +2870,38 @@ function MailPanel({
                                     {opt.label}
                                   </button>
                                 ))}
+                                {snoozeCustomId === email.id ? (
+                                  <div className="px-2 py-1.5 border-t border-owl-border mt-1" onClick={e => e.stopPropagation()}>
+                                    <input
+                                      type="datetime-local"
+                                      value={snoozeCustomInput}
+                                      onChange={e => setSnoozeCustomInput(e.target.value)}
+                                      className="w-full text-xs bg-owl-bg border border-owl-border rounded px-1.5 py-1 text-owl-text focus:border-owl-accent focus:outline-none"
+                                    />
+                                    <div className="flex gap-1 mt-1">
+                                      <button
+                                        onClick={() => {
+                                          if (!snoozeCustomInput) return;
+                                          const ts = new Date(snoozeCustomInput).getTime();
+                                          if (ts > Date.now()) { snoozeEmail(email.id, ts); setSnoozeOpenId(null); setSnoozeCustomId(null); setSnoozeCustomInput(''); forceUpdate(n => n + 1); }
+                                        }}
+                                        className="flex-1 text-xs px-2 py-1 bg-owl-accent text-white rounded hover:bg-owl-accent/80 transition-colors"
+                                      >Ayarla</button>
+                                      <button onClick={() => setSnoozeCustomId(null)} className="text-xs px-2 py-1 text-owl-text-secondary hover:text-owl-text rounded hover:bg-owl-bg transition-colors">İptal</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setSnoozeCustomId(email.id); setSnoozeCustomInput(''); }}
+                                    className="w-full text-left px-3 py-1.5 text-xs text-owl-text hover:bg-owl-bg transition-colors border-t border-owl-border mt-1"
+                                  >
+                                    📅 Özel zaman...
+                                  </button>
+                                )}
                                 {isSnoozedNow(email.id) && (
                                   <button
                                     onClick={() => { unsnoozeEmail(email.id); setSnoozeOpenId(null); forceUpdate(n => n + 1); }}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-owl-bg transition-colors border-t border-owl-border mt-1"
+                                    className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-owl-bg transition-colors border-t border-owl-border mt-0.5"
                                   >
                                     Ertelemeyi kaldır
                                   </button>
@@ -1995,7 +2912,7 @@ function MailPanel({
                           {/* Follow-up reminder button */}
                           <div className="relative shrink-0">
                             <span
-                              onClick={(e) => { e.stopPropagation(); setFollowupOpenId(followupOpenId === email.id ? null : email.id); setSnoozeOpenId(null); setLabelOpenId(null); setNoteOpenId(null); }}
+                              onClick={(e) => { e.stopPropagation(); setFollowupOpenId(followupOpenId === email.id ? null : email.id); setSnoozeOpenId(null); setLabelOpenId(null); setNoteOpenId(null); setRowColorOpenId(null); }}
                               className={`p-0.5 rounded cursor-pointer transition-colors block ${getFollowup(email.id) ? (isFollowupDue(email.id) ? 'text-orange-400' : 'text-owl-accent/70') : 'text-owl-text-secondary/30 hover:text-orange-400'}`}
                               title="Takip hatırlatıcısı"
                             >
@@ -2029,7 +2946,7 @@ function MailPanel({
                           {/* Note button */}
                           <div className="relative shrink-0">
                             <span
-                              onClick={(e) => { e.stopPropagation(); const existing = getNote(email.id); setNoteText(existing); setNoteOpenId(noteOpenId === email.id ? null : email.id); setFollowupOpenId(null); setSnoozeOpenId(null); setLabelOpenId(null); }}
+                              onClick={(e) => { e.stopPropagation(); const existing = getNote(email.id); setNoteText(existing); setNoteOpenId(noteOpenId === email.id ? null : email.id); setFollowupOpenId(null); setSnoozeOpenId(null); setLabelOpenId(null); setRowColorOpenId(null); }}
                               className={`p-0.5 rounded cursor-pointer transition-colors block ${getNote(email.id) ? 'text-yellow-400/80 hover:text-yellow-400' : 'text-owl-text-secondary/30 hover:text-yellow-400'}`}
                               title="Not ekle"
                             >
@@ -2186,6 +3103,7 @@ function MailPanel({
                             </div>
                             <div className="flex items-center gap-2 shrink-0 ml-2">
                               <span className="text-[11px] text-owl-text-secondary/60">{thread.emails.length} mesaj</span>
+                              {(() => { const u = new Set(thread.emails.map(e => e.from.email)).size; return u > 1 ? <span className="text-[11px] text-owl-text-secondary/40">· {u} katılımcı</span> : null; })()}
                               <button
                                 onClick={(e) => { e.stopPropagation(); setExpandedThreads(prev => { const n = new Set(prev); n.delete(thread.key); return n; }); }}
                                 className="p-0.5 rounded hover:bg-owl-surface-2 text-owl-text-secondary/50 hover:text-owl-text-secondary transition-colors"
@@ -2197,7 +3115,36 @@ function MailPanel({
                           </div>
                         )}
                         <div className={thread.emails.length > 1 ? 'border-l-2 border-owl-accent/20 ml-4' : ''}>
-                          {thread.emails.map((e) => renderEmailItem(e))}
+                          {(() => {
+                            if (thread.emails.length <= 1) return thread.emails.map((e) => renderEmailItem(e));
+                            const unread = thread.emails.filter(e => !e.read);
+                            const read = thread.emails.filter(e => e.read);
+                            const showReadKey = `thread-read-${thread.key}`;
+                            const showRead = expandedThreads.has(showReadKey);
+                            return (
+                              <>
+                                {unread.length > 0 && unread.map(e => renderEmailItem(e))}
+                                {read.length > 0 && !showRead && (
+                                  <button
+                                    onClick={(ev) => { ev.stopPropagation(); setExpandedThreads(prev => new Set([...prev, showReadKey])); }}
+                                    className="w-full text-left px-4 py-1.5 text-[11px] text-owl-text-secondary/50 hover:text-owl-text-secondary hover:bg-owl-surface/40 transition-colors flex items-center gap-1.5"
+                                  >
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" d="M12 8v4m0 4h.01"/></svg>
+                                    {read.length} okunmuş email gizlendi
+                                  </button>
+                                )}
+                                {read.length > 0 && showRead && read.map(e => renderEmailItem(e))}
+                                {read.length > 0 && showRead && (
+                                  <button
+                                    onClick={(ev) => { ev.stopPropagation(); setExpandedThreads(prev => { const n = new Set(prev); n.delete(showReadKey); return n; }); }}
+                                    className="w-full text-left px-4 py-1 text-[11px] text-owl-text-secondary/40 hover:text-owl-text-secondary/60 transition-colors"
+                                  >
+                                    ▲ Okunmuşları gizle
+                                  </button>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     );
@@ -2247,10 +3194,36 @@ function MailPanel({
               </>
             );
           })()}
+          {filteredEmails.length >= 5 && (() => {
+            const unread = filteredEmails.filter(e => !e.read).length;
+            const starred = filteredEmails.filter(e => e.starred).length;
+            const parts: string[] = [];
+            if (unread > 0) parts.push(`${unread} okunmamış`);
+            if (starred > 0) parts.push(`${starred} yıldızlı`);
+            parts.push(`${filteredEmails.length} toplam`);
+            return (
+              <div className="px-3 py-2 text-center text-[11px] text-owl-text-secondary/30 select-none">
+                {parts.join(' · ')}
+              </div>
+            );
+          })()}
           {filteredEmails.length === 0 && (() => {
             const isInbox = activeFolder.toUpperCase() === 'INBOX' || activeFolder === 'INBOX';
             const hasEmails = emails.length > 0;
             const isInboxZero = isInbox && hasEmails && !searchQuery;
+            const VIRTUAL_EMPTY: Record<string, { icon: string; title: string; sub: string }> = {
+              '__starred__':   { icon: '⭐', title: 'Yıldızlı email yok',        sub: 'Email listesinde ⭐ ile önemli emailleri işaretleyin' },
+              '__snoozed__':   { icon: '⏰', title: 'Ertelenmiş email yok',      sub: 'Erteleme yapmak için sağ tıklayın veya 🕐 ikonuna basın' },
+              '__followup__':  { icon: '🔔', title: 'Takip edilecek email yok',  sub: 'Takip hatırlatıcısı eklemek için 🔔 ikonunu kullanın' },
+              '__important__': { icon: '❗', title: 'Önemli email yok',           sub: 'Email üzerinde I tuşuna veya ⚠️ ikonuna basın' },
+              '__thisweek__':  { icon: '📅', title: 'Bu haftaya ait email yok',  sub: 'Son 7 günde gelen email bulunamadı' },
+              '__muted__':     { icon: '🔕', title: 'Sessize alınmış email yok', sub: 'Sağ tıklayarak göndericiyi sessize alabilirsiniz' },
+              '__needsreply__':{ icon: '💬', title: 'Yanıt bekleyen email yok',  sub: 'Harika! Gelen kutunuzu sıfırladınız' },
+              '__vip__':       { icon: '👑', title: 'VIP email yok',              sub: 'Sağ tıklayarak kişileri VIP olarak ekleyin' },
+              '__readlater__': { icon: '🔖', title: 'Sonra okunacak email yok',  sub: 'B tuşu veya 🔖 ikonu ile emailleri işaretleyin' },
+              '__invoices__':  { icon: '🧾', title: 'Fatura veya makbuz yok',     sub: 'Fatura, ödeme ve sipariş emailleri burada görünür' },
+            };
+            const virt = VIRTUAL_EMPTY[activeFolder];
             return (
               <div className="flex flex-col items-center justify-center py-12 text-owl-text-secondary gap-3">
                 {isInboxZero ? (
@@ -2273,6 +3246,16 @@ function MailPanel({
                       ))}
                     </div>
                   </>
+                ) : virt ? (
+                  <>
+                    <div className="w-14 h-14 rounded-2xl bg-owl-surface-2/70 flex items-center justify-center text-3xl opacity-80 select-none">
+                      {virt.icon}
+                    </div>
+                    <div className="text-center px-4">
+                      <p className="text-sm font-semibold text-owl-text/70">{virt.title}</p>
+                      <p className="text-[12px] text-owl-text-secondary/45 mt-1 leading-relaxed">{virt.sub}</p>
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div className="w-12 h-12 rounded-2xl bg-owl-surface-2 flex items-center justify-center opacity-60">
@@ -2287,34 +3270,94 @@ function MailPanel({
         </div>
       </div>
 
-      {/* Stats Strip */}
+      {/* Stats Strip — 7-day sparkline + today stats */}
       {(() => {
-        const today = new Date(); today.setHours(0,0,0,0);
-        const todayEmails = emails.filter(e => e.date >= today);
-        const unreadToday = todayEmails.filter(e => !e.read).length;
+        const now = Date.now();
+        const DAY = 86400000;
+        // Build 7-day buckets: index 0 = 6 days ago, 6 = today
+        const buckets = Array.from({ length: 7 }, (_, i) => {
+          const dayStart = new Date(now - (6 - i) * DAY);
+          dayStart.setHours(0, 0, 0, 0);
+          const dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999);
+          return { dayStart, dayEnd, count: 0, unread: 0 };
+        });
+        emails.forEach(e => {
+          const t = e.date.getTime();
+          const b = buckets.find(b => t >= b.dayStart.getTime() && t <= b.dayEnd.getTime());
+          if (b) { b.count++; if (!e.read) b.unread++; }
+        });
+        const maxCount = Math.max(...buckets.map(b => b.count), 1);
+        const todayBucket = buckets[6];
+        const DAY_LABELS = ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'];
         const senderCounts: Record<string, number> = {};
-        emails.forEach(e => { const s = e.from.email; senderCounts[s] = (senderCounts[s] || 0) + 1; });
-        const topSender = Object.entries(senderCounts).sort((a,b) => b[1]-a[1])[0];
+        emails.forEach(e => { const s = e.from.name || e.from.email.split('@')[0]; senderCounts[s] = (senderCounts[s] || 0) + 1; });
+        const topSender = Object.entries(senderCounts).sort((a, b) => b[1] - a[1])[0];
+
         return (
-          <div className="px-3 pt-2 pb-1 border-t border-owl-border/20 flex items-center gap-3 text-[10px] text-owl-text-secondary/50">
-            <span className="flex items-center gap-1">
-              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-              <span>Bugün: <strong className="text-owl-text-secondary/70">{todayEmails.length}</strong></span>
-            </span>
-            {unreadToday > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-owl-accent/60 inline-block" />
-                <span><strong className="text-owl-accent/70">{unreadToday}</strong> yeni</span>
+          <div className="px-3 pt-2 pb-2 border-t border-owl-border/20">
+            {/* Sparkline bars */}
+            <div className="flex items-end gap-[3px] h-8 mb-1.5">
+              {buckets.map((b, i) => {
+                const isToday = i === 6;
+                const heightPct = Math.max((b.count / maxCount) * 100, b.count > 0 ? 12 : 4);
+                const label = DAY_LABELS[b.dayStart.getDay() === 0 ? 6 : b.dayStart.getDay() - 1];
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-0.5 group/bar" title={`${label}: ${b.count} email${b.unread ? `, ${b.unread} yeni` : ''}`}>
+                    <div className="w-full relative flex items-end" style={{ height: '28px' }}>
+                      <div
+                        className={`w-full rounded-sm transition-all ${
+                          isToday
+                            ? 'bg-owl-accent/70 group-hover/bar:bg-owl-accent'
+                            : 'bg-owl-text-secondary/20 group-hover/bar:bg-owl-text-secondary/40'
+                        }`}
+                        style={{ height: `${heightPct}%` }}
+                      />
+                      {b.unread > 0 && (
+                        <div
+                          className="absolute bottom-0 w-full rounded-sm bg-owl-accent/40"
+                          style={{ height: `${Math.max((b.unread / maxCount) * 100, 8)}%` }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Day labels */}
+            <div className="flex gap-[3px] mb-1.5">
+              {buckets.map((b, i) => {
+                const isToday = i === 6;
+                const label = DAY_LABELS[b.dayStart.getDay() === 0 ? 6 : b.dayStart.getDay() - 1];
+                return (
+                  <div key={i} className={`flex-1 text-center text-[8px] leading-none ${isToday ? 'text-owl-accent/70 font-bold' : 'text-owl-text-secondary/30'}`}>
+                    {isToday ? 'Bgn' : label}
+                  </div>
+                );
+              })}
+            </div>
+            {/* Summary row */}
+            <div className="flex items-center gap-2 text-[10px] text-owl-text-secondary/50">
+              <span>
+                Bugün: <strong className="text-owl-text-secondary/70">{todayBucket.count}</strong>
+                {todayBucket.unread > 0 && <span className="text-owl-accent/70 ml-1">({todayBucket.unread} yeni)</span>}
               </span>
-            )}
-            {topSender && (
-              <span className="truncate flex-1 text-right" title={`En çok: ${topSender[0]}`}>
-                {topSender[0].split('@')[0]} <strong className="text-owl-text-secondary/70">({topSender[1]})</strong>
-              </span>
-            )}
+              {topSender && (
+                <span className="truncate flex-1 text-right" title={`En çok: ${topSender[0]}`}>
+                  ↑ {topSender[0]} <strong className="text-owl-text-secondary/60">({topSender[1]})</strong>
+                </span>
+              )}
+            </div>
           </div>
         );
       })()}
+
+      {/* Offline banner */}
+      {!isOnline && (
+        <div className="px-3 py-1.5 bg-red-500/10 border-t border-red-500/20 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+          <span className="text-[11px] text-red-400 font-medium">Çevrimdışı — sync duraklatıldı</span>
+        </div>
+      )}
 
       {/* Account Info Footer */}
       <div className="panel-footer px-3 py-2.5">
@@ -2365,6 +3408,42 @@ function MailPanel({
                 )}
               </button>
             )}
+            {/* DND toggle */}
+            {onDndSet && (
+              <div className="relative">
+                <button
+                  onClick={() => setDndMenuOpen(p => !p)}
+                  className={`action-btn relative ${dndUntil && Date.now() < dndUntil ? 'text-owl-accent' : ''}`}
+                  title={dndUntil && Date.now() < dndUntil ? `DND: ${dndRemaining} kaldı` : 'Rahatsız Etme'}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                  </svg>
+                  {dndUntil && Date.now() < dndUntil && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-owl-accent animate-pulse" />
+                  )}
+                </button>
+                {dndMenuOpen && (
+                  <div className="absolute bottom-full right-0 mb-2 w-44 bg-owl-surface border border-owl-border/60 rounded-xl shadow-owl-lg py-1 z-50">
+                    <div className="px-3 py-1.5 text-[10px] text-owl-text-secondary/50 font-semibold uppercase tracking-wider">Rahatsız Etme</div>
+                    {dndUntil && Date.now() < dndUntil ? (
+                      <>
+                        <div className="px-3 py-1.5 text-xs text-owl-accent font-medium">{dndRemaining} kaldı</div>
+                        <button onClick={() => { onDndSet(null); setDndMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-owl-text hover:bg-owl-accent/10 hover:text-owl-accent transition-colors">
+                          İptal Et
+                        </button>
+                      </>
+                    ) : (
+                      [['25 Dakika', 25 * 60 * 1000], ['1 Saat', 60 * 60 * 1000], ['2 Saat', 2 * 60 * 60 * 1000], ['Bitiş Saatine Kadar', (() => { const d = new Date(); d.setHours(18, 0, 0, 0); return Math.max(60000, d.getTime() - Date.now()); })()]] as [string, number][]
+                    ).map(([label, ms]) => (
+                      <button key={label} onClick={() => { onDndSet(Date.now() + ms); setDndMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-owl-text hover:bg-owl-accent/10 hover:text-owl-accent transition-colors">
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <button
               onClick={onSettingsClick}
               className="action-btn"
@@ -2379,7 +3458,9 @@ function MailPanel({
       {/* Hover Preview Card */}
       {hoverPreview && (() => {
         const safeX = Math.min(hoverPreview.x, window.innerWidth - 308);
-        const safeY = Math.min(hoverPreview.y, window.innerHeight - 180);
+        const safeY = Math.min(hoverPreview.y, window.innerHeight - 200);
+        const senderCount = emails.filter(e => e.from.email === hoverPreview.email.from.email).length;
+        const isVipSender = isVip(hoverPreview.email.from.email);
         return (
           <div
             className="fixed z-[400] w-72 dropdown-panel shadow-owl-lg pointer-events-none animate-scale-in"
@@ -2389,18 +3470,35 @@ function MailPanel({
               <p className="text-sm font-semibold text-owl-text leading-snug line-clamp-2 mb-1.5">
                 {hoverPreview.email.subject}
               </p>
-              <div className="flex items-center gap-1.5 mb-2">
+              <div className="flex items-center gap-1.5 mb-1">
                 <span className="text-[11px] text-owl-text-secondary/80 font-medium truncate">
-                  {hoverPreview.email.from.name}
+                  {isVipSender && <span className="text-yellow-400 mr-0.5">⭐</span>}{hoverPreview.email.from.name}
                 </span>
                 <span className="text-owl-border/60">·</span>
                 <span className="text-[11px] text-owl-text-secondary/50 shrink-0">
                   {hoverPreview.email.date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
                 </span>
               </div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] text-owl-text-secondary/40 truncate">{hoverPreview.email.from.email}</span>
+                {senderCount > 1 && <span className="text-[10px] text-owl-accent/60 shrink-0">{senderCount} email</span>}
+              </div>
               <p className="text-xs text-owl-text-secondary/60 leading-relaxed line-clamp-3">
                 {hoverPreview.email.preview}
               </p>
+              {hoverPreview.email.hasAttachments && hoverPreview.email.attachments && hoverPreview.email.attachments.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-owl-border/30 flex flex-col gap-0.5">
+                  {hoverPreview.email.attachments.slice(0, 3).map((att, i) => (
+                    <div key={i} className="flex items-center gap-1 text-[11px] text-owl-text-secondary/50">
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                      <span className="truncate">{att.filename}</span>
+                    </div>
+                  ))}
+                  {hoverPreview.email.attachments.length > 3 && (
+                    <span className="text-[10px] text-owl-text-secondary/35">+{hoverPreview.email.attachments.length - 3} daha</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -2428,6 +3526,10 @@ function CommandPalette({ isOpen, onClose, onCommand }: { isOpen: boolean; onClo
     { id: "markUnread", name: t('commands.markUnreadCmd'), shortcut: "U", icon: <Icons.MailUnread /> },
     { id: "aiReply", name: t('commands.aiReplyCmd'), shortcut: "G", icon: <Icons.Sparkles /> },
     { id: "shortcuts", name: t('commands.shortcutsHelp'), shortcut: "?", icon: <Icons.Command /> },
+    { id: "archiveSweep30", name: "30 günden eski emailları arşivle", shortcut: "", icon: <Icons.Archive /> },
+    { id: "archiveSweep60", name: "60 günden eski emailları arşivle", shortcut: "", icon: <Icons.Archive /> },
+    { id: "archiveSweep90", name: "90 günden eski emailları arşivle", shortcut: "", icon: <Icons.Archive /> },
+    { id: "todaySummary", name: "Bugünün Özeti", shortcut: "", icon: <Icons.Summarize /> },
   ];
 
   const filteredCommands = query
@@ -2477,6 +3579,7 @@ function App() {
   const { t: _tApp, lang: appLang } = useTranslation();
 
   const contextMenu = useContextMenu();
+  const [, forceUpdate] = useState(0);
   const [currentPage, setCurrentPage] = useState<Page>('mail');
   const [activeFolder, setActiveFolder] = useState("INBOX");
   const [emails, setEmails] = useState<Email[]>([]);  // Start empty - no mock data
@@ -2494,6 +3597,12 @@ function App() {
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc'); // DEFAULT: newest/unread first
   const [accountFetchStatuses, setAccountFetchStatuses] = useState<any[]>([]); // Track account fetch status for error display
 
+  // Restore per-folder sort when folder changes
+  useEffect(() => {
+    const saved = getFolderSort(activeFolder);
+    if (saved) { setSortBy(saved.by); setSortDirection(saved.dir); }
+  }, [activeFolder]);
+
   // Log account fetch errors (TODO: Add UI banner for failed accounts)
   useEffect(() => {
     const failedAccounts = accountFetchStatuses.filter(s => !s.success);
@@ -2508,6 +3617,7 @@ function App() {
   const [addAccountModalOpen, setAddAccountModalOpen] = useState(false);
   const [_isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   // IMAP Folders state
   const [imapFolders, setImapFolders] = useState<ImapFolder[]>([]);
@@ -2529,11 +3639,22 @@ function App() {
   // Settings state for API keys and auto-sync
   const [geminiApiKey, setGeminiApiKey] = useState<string | undefined>(undefined);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [syncPaused, setSyncPaused] = useState(false);
   const [autoSyncInterval, setAutoSyncInterval] = useState(5); // minutes
   const [autoPhishingDetection, setAutoPhishingDetection] = useState(true);
   const [autoMarkReadDelay, setAutoMarkReadDelay] = useState(2); // seconds
   const [appSettings, setAppSettings] = useState<SettingsType>(DEFAULT_SETTINGS);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+
+  // Favourite folders
+  const [favFolders, setFavFolders] = useState<string[]>(() => getFavFolders());
+  const handleToggleFavFolder = useCallback((path: string) => {
+    toggleFavFolder(path);
+    setFavFolders(getFavFolders());
+  }, []);
+
+  // Quick compose to sender state
+  const [composeInitialTo, setComposeInitialTo] = useState<{ email: string; name: string } | null>(null);
 
   // Apply dark/light theme to document
   useEffect(() => {
@@ -2960,8 +4081,8 @@ function App() {
             if (selectedAccountId && typeof selectedAccountId === 'number') {
               emailCache.current.set(cacheKey(selectedAccountId, 'INBOX'), updatedEmails);
             }
-            // Show toast for first new email
-            if (uniqueNewEmails.length > 0) {
+            // Show toast for first new email (suppressed in DND mode)
+            if (uniqueNewEmails.length > 0 && !(dndUntil && Date.now() < dndUntil)) {
               const first = uniqueNewEmails[0];
               const preview = (first.preview || first.bodyText || '').slice(0, 80);
               setNewEmailToast({ id: first.id, from: first.from.name || first.from.email, subject: first.subject, preview });
@@ -2981,7 +4102,7 @@ function App() {
 
   // Poll for new emails based on auto-sync settings
   useEffect(() => {
-    if (!selectedAccountId || accounts.length === 0 || !autoSyncEnabled) return;
+    if (!selectedAccountId || accounts.length === 0 || !autoSyncEnabled || syncPaused) return;
 
     // Initialize known email IDs from current emails
     emails.forEach(e => knownEmailIds.current.add(e.id));
@@ -2994,7 +4115,7 @@ function App() {
     }, intervalMs);
 
     return () => clearInterval(pollInterval);
-  }, [selectedAccountId, accounts, checkForNewEmails, emails, autoSyncEnabled, autoSyncInterval]);
+  }, [selectedAccountId, accounts, checkForNewEmails, emails, autoSyncEnabled, autoSyncInterval, syncPaused]);
 
   // Sync emails handler - fetches from IMAP and updates cache
   const handleSync = useCallback(async () => {
@@ -3298,6 +4419,8 @@ function App() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeMode, setComposeMode] = useState<ComposeMode>('new');
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  const [moveFolderOpen, setMoveFolderOpen] = useState(false);
+  const [moveFolderQuery, setMoveFolderQuery] = useState('');
   const [draftToEdit, setDraftToEdit] = useState<DraftEmail | null>(null);
 
   // Undo Send state
@@ -3312,6 +4435,10 @@ function App() {
   const newEmailToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoActionTimerRef = useRef<{ countdown: ReturnType<typeof setInterval>; commit: ReturnType<typeof setTimeout> } | null>(null);
 
+  // DND (Do Not Disturb) timer
+  const [dndUntil, setDndUntil] = useState<number | null>(null);
+  const [dndRemaining, setDndRemaining] = useState<string>('');
+
   // Focus Mode (Zen/distraction-free reading)
   const [focusMode, setFocusMode] = useState(false);
   const [accentTheme, setAccentTheme] = useState<AccentTheme>(() => {
@@ -3321,6 +4448,31 @@ function App() {
   });
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [, schedForceUpdate] = useState(0);
+
+  // Network status
+  useEffect(() => {
+    const up = () => setIsOnline(true);
+    const dn = () => setIsOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', dn);
+    return () => { window.removeEventListener('online', up); window.removeEventListener('offline', dn); };
+  }, []);
+
+  // DND countdown ticker
+  useEffect(() => {
+    if (!dndUntil) { setDndRemaining(''); return; }
+    const tick = () => {
+      const ms = dndUntil - Date.now();
+      if (ms <= 0) { setDndUntil(null); setDndRemaining(''); return; }
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      setDndRemaining(h > 0 ? `${h}s ${m}dk` : m > 0 ? `${m}dk ${s}s` : `${s}s`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [dndUntil]);
   const [showTaskPanel, setShowTaskPanel] = useState(false);
   const [taskCreationEmail, setTaskCreationEmail] = useState<{ id: string; subject: string } | null>(null);
   const [taskNote, setTaskNote] = useState('');
@@ -3328,6 +4480,7 @@ function App() {
   const [, taskForceUpdate] = useState(0);
   const [mailPanelCollapsed, setMailPanelCollapsed] = useState(() => localStorage.getItem('owlmail-panel-collapsed') === 'true');
   const [mailPanelWidth, setMailPanelWidth] = useState(() => Math.min(600, Math.max(260, parseInt(localStorage.getItem('owlmail-panel-width') || '380'))));
+  const [readingPaneLayout, setReadingPaneLayout] = useState<'right' | 'bottom'>(() => (localStorage.getItem('owlmail-reading-pane-layout') as 'right' | 'bottom') || 'right');
   const dividerDragRef = useRef<{ startX: number; startW: number } | null>(null);
 
   // Email states
@@ -3491,7 +4644,7 @@ function App() {
             bodyHtml: currentEmail.bodyHtml,
           },
           'tr',
-          geminiApiKey || undefined
+          appSettings
         );
         setPhishingResults(prev => ({ ...prev, [currentEmail.id]: result }));
       } catch (err) {
@@ -3513,7 +4666,7 @@ function App() {
     };
 
     analyzeEmail();
-  }, [currentEmail?.id, currentEmail?.from, currentEmail?.subject, currentEmail?.body, currentEmail?.bodyHtml, phishingResults, analyzingPhishingId, geminiApiKey, autoPhishingDetection]);
+  }, [currentEmail?.id, currentEmail?.from, currentEmail?.subject, currentEmail?.body, currentEmail?.bodyHtml, phishingResults, analyzingPhishingId, appSettings, autoPhishingDetection]);
 
   // Auto-detect tracking when email is selected
   useEffect(() => {
@@ -3681,11 +4834,44 @@ function App() {
     setSelectedEmails(new Set());
   }, []);
 
-  type BulkAction = 'read' | 'unread' | 'star' | 'unstar' | 'archive' | 'delete';
+  type BulkAction = 'read' | 'unread' | 'star' | 'unstar' | 'archive' | 'delete' | 'pin' | 'snooze1h' | 'snoozetomorrow' | 'readlater' | 'important';
 
   const handleBulkAction = useCallback(async (action: BulkAction) => {
     if (selectedEmails.size === 0 || !selectedAccountId) return;
     const ids = Array.from(selectedEmails);
+
+    // localStorage-only bulk actions (no backend call needed)
+    if (action === 'pin') {
+      ids.forEach(id => togglePin(id));
+      setSelectedEmails(new Set());
+      forceUpdate(n => n + 1);
+      return;
+    }
+    if (action === 'snooze1h') {
+      ids.forEach(id => snoozeEmail(id, Date.now() + 60 * 60 * 1000));
+      setSelectedEmails(new Set());
+      forceUpdate(n => n + 1);
+      return;
+    }
+    if (action === 'snoozetomorrow') {
+      const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0);
+      ids.forEach(id => snoozeEmail(id, d.getTime()));
+      setSelectedEmails(new Set());
+      forceUpdate(n => n + 1);
+      return;
+    }
+    if (action === 'readlater') {
+      ids.forEach(id => toggleReadLater(id));
+      setSelectedEmails(new Set());
+      forceUpdate(n => n + 1);
+      return;
+    }
+    if (action === 'important') {
+      ids.forEach(id => toggleImportant(id));
+      setSelectedEmails(new Set());
+      forceUpdate(n => n + 1);
+      return;
+    }
 
     // Optimistic update
     setEmails(prev => prev.map(e => {
@@ -3722,6 +4908,26 @@ function App() {
     }
   }, [selectedEmails, selectedAccountId, activeFolder]);
 
+  const handleMoveToFolder = useCallback(async (targetFolderPath: string) => {
+    if (!selectedEmail || !selectedAccountId) return;
+    setMoveFolderOpen(false);
+    setMoveFolderQuery('');
+    // Optimistic: remove from current list
+    const movedId = selectedEmail;
+    setEmails(prev => prev.filter(e => e.id !== movedId));
+    const idx = visibleEmails.findIndex(e => e.id === movedId);
+    const next = idx < visibleEmails.length - 1 ? visibleEmails[idx + 1].id : idx > 0 ? visibleEmails[idx - 1].id : null;
+    setSelectedEmail(next);
+    try {
+      const { moveEmail } = await import('./services/mailService');
+      const { accountId: acctId, uid } = parseEmailId(movedId, selectedAccountId);
+      await moveEmail(acctId, uid, targetFolderPath, activeFolder);
+    } catch (err) {
+      console.error('Move failed:', err);
+      // Don't revert — user can navigate to the target folder to see the email
+    }
+  }, [selectedEmail, selectedAccountId, visibleEmails, activeFolder]);
+
   const handleLoadImages = () => {
     if (selectedEmail && !loadedImageEmails.includes(selectedEmail)) {
       setLoadedImageEmails([...loadedImageEmails, selectedEmail]);
@@ -3736,9 +4942,12 @@ function App() {
 
   // Compose handlers
   const openCompose = useCallback((mode: ComposeMode) => {
+    if ((mode === 'reply' || mode === 'replyAll' || mode === 'forward') && selectedEmail) {
+      markReplied(selectedEmail);
+    }
     setComposeMode(mode);
     setComposeOpen(true);
-  }, []);
+  }, [selectedEmail]);
 
   // Handle opening a draft for editing
   const handleOpenDraft = useCallback(async (draftId: number) => {
@@ -3929,22 +5138,16 @@ function App() {
   // Summarize
   const handleSummarize = useCallback(async () => {
     if (!currentEmail || summarizingId) return;
-    if (!geminiApiKey) {
-      console.error("Gemini API key not set. Please configure it in Settings > AI.");
-      alert(_tApp('appErrors.geminiApiKeyNotSet'));
-      return;
-    }
     setSummarizingId(currentEmail.id);
     try {
-      // Auto-detect language from email content
-      const summary = await summarizeEmail(currentEmail.body, undefined, geminiApiKey);
+      const { summary } = await summarizeEmail(currentEmail.body, 'tr', appSettings);
       setSummaries(prev => ({ ...prev, [currentEmail.id]: summary }));
     } catch (err) {
       console.error("Summarize failed:", err);
     } finally {
       setSummarizingId(null);
     }
-  }, [currentEmail, summarizingId, geminiApiKey]);
+  }, [currentEmail, summarizingId, appSettings]);
 
   // Command handler
   const handleCommand = useCallback((cmd: string) => {
@@ -3960,8 +5163,34 @@ function App() {
       case "aiReply": if (currentEmail) setAiReplyOpen(true); break;
       case "shortcuts": setShortcutsHelpOpen(true); break;
       case "search": document.querySelector<HTMLInputElement>('input[placeholder*="Search"]')?.focus(); break;
+      case "archiveSweep30":
+      case "archiveSweep60":
+      case "archiveSweep90": {
+        const days = cmd === "archiveSweep30" ? 30 : cmd === "archiveSweep60" ? 60 : 90;
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        const count = emails.filter(e => !e.archived && !e.deleted && e.date.getTime() < cutoff).length;
+        if (count === 0) { alert(`${days} günden eski email bulunamadı.`); break; }
+        if (window.confirm(`${days} günden eski ${count} email arşivlenecek. Devam edilsin mi?`)) {
+          setEmails(prev => prev.map(e => (!e.archived && !e.deleted && e.date.getTime() < cutoff) ? { ...e, archived: true } : e));
+        }
+        break;
+      }
+      case "todaySummary": {
+        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+        const todayEmails = emails.filter(e => !e.deleted && e.date >= todayStart);
+        const unread = todayEmails.filter(e => !e.read).length;
+        const starred = todayEmails.filter(e => e.starred).length;
+        const senders = [...new Set(todayEmails.map(e => e.from.name || e.from.email))];
+        const msg = `📬 Bugünün Özeti (${todayStart.toLocaleDateString('tr-TR')})\n\n`
+          + `Toplam email: ${todayEmails.length}\n`
+          + `Okunmamış: ${unread}\n`
+          + `Yıldızlı: ${starred}\n`
+          + (senders.length > 0 ? `\nGönderenler: ${senders.slice(0,5).join(', ')}${senders.length > 5 ? ` ve ${senders.length-5} kişi daha` : ''}` : '');
+        alert(msg);
+        break;
+      }
     }
-  }, [currentEmail, openCompose, handleArchive, handleDelete, handleToggleStar, handleToggleRead]);
+  }, [currentEmail, openCompose, handleArchive, handleDelete, handleToggleStar, handleToggleRead, emails]);
 
   // Navigation
   const navigateEmail = useCallback((direction: 'next' | 'prev') => {
@@ -3991,6 +5220,9 @@ function App() {
     }
   }, [selectedEmail, visibleEmails]);
 
+  // Navigation counter (after visibleEmails is defined)
+  const currentEmailIndex = selectedEmail ? visibleEmails.findIndex(e => e.id === selectedEmail) : -1;
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -4004,9 +5236,10 @@ function App() {
       }
 
       // Ignore if any modal is open (except Escape)
-      const modalOpen = commandPaletteOpen || aiReplyOpen || composeOpen || shortcutsHelpOpen;
+      const modalOpen = commandPaletteOpen || aiReplyOpen || composeOpen || shortcutsHelpOpen || moveFolderOpen;
 
       if (e.key === "Escape") {
+        if (moveFolderOpen) { setMoveFolderOpen(false); setMoveFolderQuery(''); return; }
         if (gotoMode) { setGotoMode(false); if (gotoTimerRef.current) { clearTimeout(gotoTimerRef.current); gotoTimerRef.current = null; } return; }
         setCommandPaletteOpen(false);
         setAiReplyOpen(false);
@@ -4044,6 +5277,14 @@ function App() {
       // Let system shortcuts through (Ctrl+C, Ctrl+V, Ctrl+A, Ctrl+X, Ctrl+Z, etc.)
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
+      // Shift+A — select all unread
+      if (e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        const unreadIds = visibleEmails.filter(em => !em.read).map(em => em.id);
+        if (unreadIds.length > 0) handleBulkSelectAll(unreadIds);
+        return;
+      }
+
       // Single key shortcuts (no modifier)
       switch (e.key.toLowerCase()) {
         case "j": navigateEmail('next'); break;
@@ -4061,12 +5302,32 @@ function App() {
           gotoTimerRef.current = setTimeout(() => { setGotoMode(false); }, 1500);
           break;
         case "v": if (currentEmail) window.dispatchEvent(new CustomEvent('owlmail:reading-mode')); break;
+        case "m": if (currentEmail) { e.preventDefault(); setMoveFolderOpen(true); setMoveFolderQuery(''); } break;
         case "e": handleArchive(); break;
         case "s": handleToggleStar(); break;
         case "u": handleToggleRead(); break;
         case "/": e.preventDefault(); document.querySelector<HTMLInputElement>('input[placeholder*="Search"]')?.focus(); break;
         case "?": setShortcutsHelpOpen(true); break;
         case "#": handleDelete(); break;
+        case "t": if (currentEmail) { setTaskCreationEmail({ id: currentEmail.id, subject: currentEmail.subject }); setTaskNote(''); setTaskDueDate(''); setShowTaskPanel(true); } break;
+        case "p": if (currentEmail) { e.preventDefault(); window.dispatchEvent(new CustomEvent('owl:print-email')); } break;
+        case "b": if (currentEmail) { toggleReadLater(currentEmail.id); forceUpdate(n => n + 1); } break;
+        case "i": if (currentEmail) { toggleImportant(currentEmail.id); forceUpdate(n => n + 1); } break;
+        case "d": {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('owlmail:cycle-density'));
+          break;
+        }
+        case "x": if (selectedEmail) handleBulkToggle(selectedEmail); break;
+        case "n": {
+          e.preventDefault();
+          const VIRTUAL_CYCLE = ['INBOX', '__starred__', '__snoozed__', '__followup__', '__important__', '__thisweek__', '__readlater__'];
+          const currentIdx = VIRTUAL_CYCLE.indexOf(activeFolder);
+          const nextIdx = currentIdx === -1 ? 0 : (currentIdx + 1) % VIRTUAL_CYCLE.length;
+          setActiveFolder(VIRTUAL_CYCLE[nextIdx]);
+          setSelectedEmail(null);
+          break;
+        }
         case "escape":
           if (focusMode) { setFocusMode(false); e.preventDefault(); }
           else if (selectedEmails.size > 0) { handleBulkClear(); e.preventDefault(); }
@@ -4075,13 +5336,18 @@ function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commandPaletteOpen, aiReplyOpen, composeOpen, shortcutsHelpOpen, gotoMode, currentEmail, navigateEmail, navigateUnread, openCompose, handleArchive, handleDelete, handleToggleStar, handleToggleRead, selectedEmails, handleBulkClear, focusMode]);
+  }, [commandPaletteOpen, aiReplyOpen, composeOpen, shortcutsHelpOpen, moveFolderOpen, gotoMode, currentEmail, navigateEmail, navigateUnread, openCompose, handleArchive, handleDelete, handleToggleStar, handleToggleRead, selectedEmails, handleBulkClear, handleBulkSelectAll, visibleEmails, focusMode, setTaskCreationEmail, setTaskNote, setTaskDueDate, setShowTaskPanel, handleBulkToggle, activeFolder, selectedEmail]);
 
   // Dynamic tab title — unread count
   useEffect(() => {
     const unread = emails.filter(e => !e.read && !e.deleted && !e.archived).length;
     document.title = unread > 0 ? `(${unread}) OwlMail Pro` : 'OwlMail Pro';
   }, [emails]);
+
+  // Track view count per email
+  useEffect(() => {
+    if (selectedEmail) incrementViewCount(selectedEmail);
+  }, [selectedEmail]);
 
   // Mark as read when selected (with backend call)
   useEffect(() => {
@@ -4336,6 +5602,7 @@ function App() {
               onSchedule={(draft, sendAt) => { addScheduled(draft, sendAt); schedForceUpdate(n => n + 1); }}
               onSaveDraft={handleSaveDraft}
               defaultAccount={currentAccount}
+              onArchiveOriginal={selectedEmail ? () => handleArchive() : undefined}
             />
           </>
         )}
@@ -4382,7 +5649,9 @@ function App() {
   // Desktop Layout
   // ============================================================================
   return (
-    <div className="h-screen flex bg-owl-bg" style={{background: 'radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.04) 0%, transparent 60%), rgb(var(--owl-bg))'}}>
+    <div className={`h-screen ${readingPaneLayout === 'bottom' ? 'flex flex-col' : 'flex'} bg-owl-bg`} style={{background: 'radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.04) 0%, transparent 60%), rgb(var(--owl-bg))'}}>
+      {/* When bottom layout, wrap MailPanel+divider in a top container */}
+      <div className={readingPaneLayout === 'bottom' && !focusMode ? 'flex overflow-hidden shrink-0' : 'contents'} style={readingPaneLayout === 'bottom' && !focusMode ? {height: '55%'} : undefined}>
       {!focusMode && <MailPanel
         emails={emails}
         selectedId={selectedEmail}
@@ -4412,20 +5681,64 @@ function App() {
         isSearching={isSearching}
         searchResultsCount={searchResults.length}
         sortBy={sortBy}
-        onSortByChange={setSortBy}
+        onSortByChange={(s) => { setSortBy(s); saveFolderSort(activeFolder, s, sortDirection); }}
         sortDirection={sortDirection}
-        onSortDirectionChange={setSortDirection}
+        onSortDirectionChange={(d) => { setSortDirection(d); saveFolderSort(activeFolder, sortBy, d); }}
         onEmailContextMenu={(e, email) => {
           contextMenu.show(e, [
-            { id: 'reply', label: 'Reply', shortcut: 'R', icon: <Icons.Reply />, onClick: () => { handleEmailSelect(email.id); openCompose('reply'); } },
-            { id: 'replyAll', label: 'Reply All', shortcut: 'A', icon: <Icons.ReplyAll />, onClick: () => { handleEmailSelect(email.id); openCompose('replyAll'); } },
-            { id: 'forward', label: 'Forward', shortcut: 'F', icon: <Icons.Forward />, onClick: () => { handleEmailSelect(email.id); openCompose('forward'); } },
+            { id: 'reply', label: 'Yanıtla', shortcut: 'R', icon: <Icons.Reply />, onClick: () => { handleEmailSelect(email.id); openCompose('reply'); } },
+            { id: 'replyAll', label: 'Tümünü Yanıtla', shortcut: 'A', icon: <Icons.ReplyAll />, onClick: () => { handleEmailSelect(email.id); openCompose('replyAll'); } },
+            { id: 'forward', label: 'İlet', shortcut: 'F', icon: <Icons.Forward />, onClick: () => { handleEmailSelect(email.id); openCompose('forward'); } },
             { id: 'div1', label: '', divider: true, onClick: () => {} },
-            { id: 'star', label: email.starred ? 'Unstar' : 'Star', shortcut: 'S', icon: <Icons.Star />, onClick: () => handleToggleStar(email.id) },
-            { id: 'read', label: email.read ? 'Mark Unread' : 'Mark Read', shortcut: 'U', icon: <Icons.MailOpen />, onClick: () => { handleEmailSelect(email.id); setTimeout(handleToggleRead, 50); } },
+            { id: 'star', label: email.starred ? 'Yıldızı Kaldır' : 'Yıldızla', shortcut: 'S', icon: <Icons.Star />, onClick: () => handleToggleStar(email.id) },
+            { id: 'read', label: email.read ? 'Okunmadı İşaretle' : 'Okundu İşaretle', shortcut: 'U', icon: <Icons.MailOpen />, onClick: () => { handleEmailSelect(email.id); setTimeout(handleToggleRead, 50); } },
+            { id: 'pin', label: isPinned(email.id) ? 'Sabitlemeyi Kaldır' : 'Sabitle', icon: (
+              <svg className="w-4 h-4" fill={isPinned(email.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
+            ), onClick: () => { togglePin(email.id); forceUpdate(n => n + 1); } },
+            { id: 'important', label: isImportant(email.id) ? 'Önemliden Kaldır' : 'Önemli İşaretle', icon: (
+              <svg className="w-4 h-4" fill={isImportant(email.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+            ), onClick: () => { toggleImportant(email.id); forceUpdate(n => n + 1); } },
+            { id: 'readlater', label: isReadLater(email.id) ? 'Sonra Oku\'dan Kaldır' : 'Sonra Oku', shortcut: 'B', icon: (
+              <svg className="w-4 h-4" fill={isReadLater(email.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
+            ), onClick: () => { toggleReadLater(email.id); forceUpdate(n => n + 1); } },
             { id: 'div2', label: '', divider: true, onClick: () => {} },
-            { id: 'archive', label: 'Archive', shortcut: 'E', icon: <Icons.Archive />, onClick: () => { handleEmailSelect(email.id); handleArchive(); } },
-            { id: 'delete', label: 'Delete', shortcut: '#', icon: <Icons.Trash />, danger: true, onClick: () => { handleEmailSelect(email.id); handleDelete(); } },
+            { id: 'snooze1h', label: '1 Saat Ertele', icon: (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            ), onClick: () => { snoozeEmail(email.id, Date.now() + 60 * 60 * 1000); forceUpdate(n => n + 1); } },
+            { id: 'snoozetomorrow', label: 'Yarın Sabaha Ertele', icon: (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            ), onClick: () => { const d = new Date(); d.setDate(d.getDate()+1); d.setHours(9,0,0,0); snoozeEmail(email.id, d.getTime()); forceUpdate(n => n + 1); } },
+            { id: 'div3', label: '', divider: true, onClick: () => {} },
+            { id: 'vip', label: isVip(email.from.email) ? `"${email.from.name || email.from.email}" VIP'ten Çıkar` : `"${email.from.name || email.from.email}" VIP Ekle`, icon: (
+              <svg className="w-4 h-4" fill={isVip(email.from.email) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+              </svg>
+            ), onClick: () => { isVip(email.from.email) ? removeVip(email.from.email) : addVip(email.from.email); forceUpdate(n => n + 1); } },
+            { id: 'mute', label: isMuted(email.from.email) ? `"${email.from.name || email.from.email}" Sesini Aç` : `"${email.from.name || email.from.email}" Sesini Kapat`, icon: (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                {isMuted(email.from.email)
+                  ? <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m-3-6H5.586a1 1 0 01-.707-.293l-.586-.586A1 1 0 014 10.586V9.414a1 1 0 01.293-.707l.586-.586A1 1 0 015.586 8H9m6 0v8"/>
+                  : <><path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/><path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></>
+                }
+              </svg>
+            ), onClick: () => { isMuted(email.from.email) ? unmuteSender(email.from.email) : muteSender(email.from.email); forceUpdate(n => n + 1); } },
+            { id: 'div4', label: '', divider: true, onClick: () => {} },
+            { id: 'move', label: 'Klasöre Taşı', shortcut: 'M', icon: (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+            ), onClick: () => { handleEmailSelect(email.id); setMoveFolderOpen(true); setMoveFolderQuery(''); } },
+            { id: 'archive', label: 'Arşivle', shortcut: 'E', icon: <Icons.Archive />, onClick: () => { handleEmailSelect(email.id); handleArchive(); } },
+            { id: 'delete', label: 'Sil', shortcut: '#', icon: <Icons.Trash />, danger: true, onClick: () => { handleEmailSelect(email.id); handleDelete(); } },
+            { id: 'div5', label: '', divider: true, onClick: () => {} },
+            { id: 'bulk-archive-sender', label: `"${email.from.name || email.from.email}" tüm emaillerini arşivle`, icon: <Icons.Archive />, onClick: () => {
+              setEmails(prev => prev.map(e => e.from.email === email.from.email ? { ...e, archived: true, deleted: false } : e));
+            }},
+            { id: 'bulk-read-sender', label: `"${email.from.name || email.from.email}" tüm emaillerini okundu işaretle`, icon: <Icons.MailOpen />, onClick: () => {
+              setEmails(prev => prev.map(e => e.from.email === email.from.email ? { ...e, read: true } : e));
+            }},
+            { id: 'bulk-delete-sender', label: `"${email.from.name || email.from.email}" tüm emaillerini sil`, icon: <Icons.Trash />, danger: true, onClick: () => {
+              if (window.confirm(`${email.from.name || email.from.email} göndericisinden gelen TÜM emailler silinecek. Emin misin?`))
+                setEmails(prev => prev.filter(e => e.from.email !== email.from.email));
+            }},
           ]);
         }}
         selectedEmails={selectedEmails}
@@ -4447,8 +5760,41 @@ function App() {
           localStorage.setItem('owlivion-settings', JSON.stringify({ ...saved, theme: next }));
           document.documentElement.setAttribute('data-theme', next);
         }}
+        dndUntil={dndUntil}
+        dndRemaining={dndRemaining}
+        onDndSet={setDndUntil}
+        syncPaused={syncPaused}
+        onToggleSyncPause={() => setSyncPaused(p => !p)}
+        isOnline={isOnline}
+        readingPaneLayout={readingPaneLayout}
+        onToggleReadingPaneLayout={() => {
+          const next: 'right' | 'bottom' = readingPaneLayout === 'right' ? 'bottom' : 'right';
+          setReadingPaneLayout(next);
+          localStorage.setItem('owlmail-reading-pane-layout', next);
+        }}
+        onNavigateUnread={navigateUnread}
+        favFolders={favFolders}
+        onToggleFavFolder={handleToggleFavFolder}
+        onQuickComposeTo={(recipient) => {
+          setComposeInitialTo(recipient);
+          setComposeMode('new');
+          setComposeOpen(true);
+        }}
+        onMarkFolderRead={() => {
+          setEmails(prev => prev.map(e => ({ ...e, read: true })));
+        }}
         onMarkAllRead={() => {
           setEmails(prev => prev.map(e => ({ ...e, read: true })));
+        }}
+        onEmailDrop={async (emailId, targetFolderPath) => {
+          setEmails(prev => prev.filter(e => e.id !== emailId));
+          try {
+            const { moveEmail } = await import('./services/mailService');
+            const { accountId: acctId, uid } = parseEmailId(emailId, selectedAccountId);
+            await moveEmail(acctId, uid, targetFolderPath, activeFolder);
+          } catch (err) {
+            console.error('Drag-drop move failed:', err);
+          }
         }}
       />}
       {/* Draggable divider */}
@@ -4461,7 +5807,38 @@ function App() {
           <div className="absolute inset-y-0 -left-1 -right-1" />
         </div>
       )}
-      <EmailView
+      </div>{/* end bottom-layout top wrapper */}
+      <div className={readingPaneLayout === 'bottom' ? 'flex-1 min-h-0 border-t border-owl-border/30 overflow-hidden' : 'contents'}>
+      {selectedEmails.size > 0 && !currentEmail ? (() => {
+        const sel = emails.filter(e => selectedEmails.has(e.id));
+        const unreadSel = sel.filter(e => !e.read).length;
+        const starredSel = sel.filter(e => e.starred).length;
+        const senders = [...new Set(sel.map(e => e.from.name || e.from.email))].slice(0, 5);
+        return (
+          <div className="flex-1 flex items-center justify-center bg-owl-bg">
+            <div className="max-w-sm w-full mx-auto px-6 text-center">
+              <div className="text-5xl mb-3">📋</div>
+              <h2 className="text-xl font-semibold text-owl-text mb-1">{selectedEmails.size} email seçildi</h2>
+              <div className="flex items-center justify-center gap-3 mb-4 text-sm text-owl-text-secondary">
+                {unreadSel > 0 && <span className="text-owl-accent">{unreadSel} okunmamış</span>}
+                {starredSel > 0 && <span className="text-yellow-400">{starredSel} yıldızlı</span>}
+              </div>
+              {senders.length > 0 && (
+                <div className="mb-5 text-xs text-owl-text-secondary/60">
+                  Kimden: {senders.join(', ')}{sel.length > 5 ? ' …' : ''}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2 justify-center">
+                <button onClick={() => handleBulkAction('read')} className="px-3 py-1.5 rounded-lg text-xs bg-owl-surface border border-owl-border text-owl-text hover:border-owl-accent/50 hover:text-owl-accent transition-colors">Okundu İşaretle</button>
+                <button onClick={() => handleBulkAction('unread')} className="px-3 py-1.5 rounded-lg text-xs bg-owl-surface border border-owl-border text-owl-text hover:border-owl-accent/50 hover:text-owl-accent transition-colors">Okunmadı</button>
+                <button onClick={() => handleBulkAction('archive')} className="px-3 py-1.5 rounded-lg text-xs bg-owl-surface border border-owl-border text-owl-text hover:border-owl-accent/50 hover:text-owl-accent transition-colors">Arşivle</button>
+                <button onClick={() => handleBulkAction('delete')} className="px-3 py-1.5 rounded-lg text-xs bg-owl-surface border border-red-400/30 text-red-400 hover:border-red-400 transition-colors">Sil</button>
+                <button onClick={() => handleBulkClear()} className="px-3 py-1.5 rounded-lg text-xs bg-owl-surface border border-owl-border text-owl-text-secondary hover:text-owl-text transition-colors">Seçimi Temizle</button>
+              </div>
+            </div>
+          </div>
+        );
+      })() : <EmailView
         email={currentEmail}
         accountId={selectedAccountId?.toString() || null}
         folder={activeFolder}
@@ -4507,7 +5884,19 @@ function App() {
         }}
         senderEmailCount={currentEmail ? emails.filter(e => e.from.email === currentEmail.from.email).length : 0}
         onCreateTask={(emailId, subject) => { setTaskCreationEmail({ id: emailId, subject }); setTaskNote(''); setTaskDueDate(''); setShowTaskPanel(true); }}
-      />
+        emailIndex={currentEmailIndex >= 0 ? currentEmailIndex : undefined}
+        emailTotal={visibleEmails.length}
+        onPrevEmail={() => navigateEmail('prev')}
+        onNextEmail={() => navigateEmail('next')}
+        emailReactions={selectedEmail ? getEmailReactions(selectedEmail) : []}
+        onToggleReaction={selectedEmail ? (emoji) => { toggleReaction(selectedEmail, emoji); setEmails(prev => [...prev]); } : undefined}
+        isEmailReadLater={selectedEmail ? isReadLater(selectedEmail) : false}
+        onToggleReadLater={selectedEmail ? () => { toggleReadLater(selectedEmail); forceUpdate(n => n + 1); } : undefined}
+        isEmailImportant={selectedEmail ? isImportant(selectedEmail) : false}
+        onToggleImportant={selectedEmail ? () => { toggleImportant(selectedEmail); forceUpdate(n => n + 1); } : undefined}
+        emailViewCount={selectedEmail ? getViewCount(selectedEmail) : 0}
+      />}
+      </div>{/* end bottom-layout bottom wrapper */}
 
       {/* Modals */}
       <CommandPalette
@@ -4578,9 +5967,11 @@ function App() {
           onClose={() => {
             setComposeOpen(false);
             setDraftToEdit(null);
+            setComposeInitialTo(null);
           }}
           mode="new"
           draft={draftToEdit || undefined}
+          initialTo={composeInitialTo ? [composeInitialTo] : undefined}
           onSend={handleSend}
           onSaveDraft={handleSaveDraft}
           defaultAccount={currentAccount}
@@ -4589,6 +5980,47 @@ function App() {
 
       <ShortcutsHelp isOpen={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
 
+      {/* Move to Folder Modal */}
+      {moveFolderOpen && (
+        <div className="fixed inset-0 z-[250] flex items-start justify-center pt-24 bg-black/50 backdrop-blur-sm" onClick={() => { setMoveFolderOpen(false); setMoveFolderQuery(''); }}>
+          <div className="bg-owl-surface border border-owl-border rounded-xl shadow-owl-lg w-full max-w-sm overflow-hidden animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="px-4 pt-4 pb-3 border-b border-owl-border">
+              <div className="text-xs font-semibold text-owl-text-secondary/60 uppercase tracking-wider mb-2">Klasöre Taşı</div>
+              <input
+                autoFocus
+                type="text"
+                placeholder="Klasör ara..."
+                value={moveFolderQuery}
+                onChange={e => setMoveFolderQuery(e.target.value)}
+                className="w-full bg-owl-bg border border-owl-border rounded-lg px-3 py-2 text-sm text-owl-text placeholder-owl-text-secondary/50 outline-none focus:border-owl-accent transition-colors"
+              />
+            </div>
+            <div className="overflow-y-auto max-h-64 py-1">
+              {imapFolders
+                .filter(f => f.is_selectable && f.path !== activeFolder && (!moveFolderQuery || f.name.toLowerCase().includes(moveFolderQuery.toLowerCase()) || f.path.toLowerCase().includes(moveFolderQuery.toLowerCase())))
+                .slice(0, 12)
+                .map(folder => (
+                  <button
+                    key={folder.path}
+                    onClick={() => handleMoveToFolder(folder.path)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-owl-text hover:bg-owl-accent/10 hover:text-owl-accent transition-colors text-left"
+                  >
+                    <svg className="w-4 h-4 shrink-0 text-owl-text-secondary" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+                    <span className="truncate">{folder.name}</span>
+                    <span className="ml-auto text-[11px] text-owl-text-secondary/50 shrink-0 truncate max-w-[120px]">{folder.path}</span>
+                  </button>
+                ))
+              }
+              {imapFolders.filter(f => f.is_selectable && f.path !== activeFolder && (!moveFolderQuery || f.name.toLowerCase().includes(moveFolderQuery.toLowerCase()) || f.path.toLowerCase().includes(moveFolderQuery.toLowerCase()))).length === 0 && (
+                <div className="px-4 py-6 text-center text-sm text-owl-text-secondary/60">Klasör bulunamadı</div>
+              )}
+            </div>
+            <div className="px-4 py-2 border-t border-owl-border bg-owl-surface-2/40">
+              <p className="text-[11px] text-owl-text-secondary/50">↑↓ gezin · Enter seç · Esc kapat</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Context Menu (right-click) */}
       <ContextMenu menu={contextMenu.menu} onClose={contextMenu.hide} />

@@ -7,10 +7,11 @@ Wants=network-online.target
 Type=simple
 # Adjust to the user that is logged into Claude Code on this machine.
 User=phantom
-WorkingDirectory=/home/phantom/owlivion-mail/owlivion-home-ai
+WorkingDirectory=/home/phantom/owlmail/owlivion-home-ai
 Environment=PORT=11500
 Environment=HOST=0.0.0.0
 Environment=DEFAULT_MODEL=sonnet
+Environment=AUTH_TOKEN=15d5961c4af1ea968b27f75a7b5f220cc6273752d4a58a008f1a6dff0e33c4d7
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=5

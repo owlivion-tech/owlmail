@@ -77,6 +77,17 @@ export interface EmailViewProps {
   onFilterBySender?: (senderEmail: string) => void;
   senderEmailCount?: number;
   onCreateTask?: (emailId: string, subject: string) => void;
+  emailIndex?: number;
+  emailTotal?: number;
+  onPrevEmail?: () => void;
+  onNextEmail?: () => void;
+  emailReactions?: string[];
+  onToggleReaction?: (emoji: string) => void;
+  isEmailReadLater?: boolean;
+  onToggleReadLater?: () => void;
+  isEmailImportant?: boolean;
+  onToggleImportant?: () => void;
+  emailViewCount?: number;
 }
 
 // ─── DOMPurify Config ───────────────────────────────────────────────────────
@@ -150,6 +161,23 @@ function getFileIcon(contentType: string, filename: string): string {
   if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) return '🎵';
   if (['mp4', 'mkv', 'avi', 'mov'].includes(ext)) return '🎬';
   return '📎';
+}
+
+const REACTION_EMOJIS_EV = ['👍', '❤️', '😄', '🎉', '👀', '🔥'];
+
+// ─── Contact Notes ────────────────────────────────────────────────────────────
+const CONTACT_NOTES_KEY = 'owlmail-contact-notes';
+function getContactNotes(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(CONTACT_NOTES_KEY) || '{}'); } catch { return {}; }
+}
+function getContactNote(senderEmail: string): string {
+  return getContactNotes()[senderEmail.toLowerCase()] || '';
+}
+function setContactNoteStorage(senderEmail: string, note: string): void {
+  const notes = getContactNotes();
+  if (note.trim()) notes[senderEmail.toLowerCase()] = note.trim();
+  else delete notes[senderEmail.toLowerCase()];
+  localStorage.setItem(CONTACT_NOTES_KEY, JSON.stringify(notes));
 }
 
 // ─── Inline Icons ───────────────────────────────────────────────────────────
@@ -354,6 +382,17 @@ export function EmailView({
   onFilterBySender,
   senderEmailCount,
   onCreateTask,
+  emailIndex,
+  emailTotal,
+  onPrevEmail,
+  onNextEmail,
+  emailReactions = [],
+  onToggleReaction,
+  isEmailReadLater = false,
+  onToggleReadLater,
+  isEmailImportant = false,
+  onToggleImportant,
+  emailViewCount = 0,
 }: EmailViewProps) {
   const { t, lang } = useTranslation();
   const [showSummary, setShowSummary] = useState(true);
@@ -384,6 +423,22 @@ export function EmailView({
       return next;
     });
   }, []);
+
+  // Email Font Family (global, persisted)
+  const [emailFontFamily, setEmailFontFamily] = useState<'sans' | 'serif' | 'mono'>(() =>
+    (localStorage.getItem('owlmail-email-font-family') as 'sans' | 'serif' | 'mono') || 'sans'
+  );
+  const cycleEmailFont = useCallback(() => {
+    setEmailFontFamily(prev => {
+      const next = prev === 'sans' ? 'serif' : prev === 'serif' ? 'mono' : 'sans';
+      localStorage.setItem('owlmail-email-font-family', next);
+      return next;
+    });
+  }, []);
+  const fontFamilyStyle = emailFontFamily === 'serif' ? 'Georgia, "Times New Roman", serif' : emailFontFamily === 'mono' ? '"Courier New", Courier, monospace' : 'inherit';
+
+  // Full header detail panel
+  const [showFullHeaders, setShowFullHeaders] = useState(false);
 
   // Copy email address
   const [copiedEmail, setCopiedEmail] = useState(false);
@@ -419,6 +474,9 @@ export function EmailView({
   const [findCurrentIdx, setFindCurrentIdx] = useState(0);
   const findInputRef = useRef<HTMLInputElement>(null);
 
+  // Dark email body toggle
+  const [darkBody, setDarkBody] = useState(false);
+
   // Reading Progress Bar
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -428,6 +486,13 @@ export function EmailView({
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
   const [quickReplyText, setQuickReplyText] = useState('');
   const quickReplyRef = useRef<HTMLTextAreaElement>(null);
+
+  // Contact Notes
+  const [contactNote, setContactNote] = useState('');
+  const [showContactNote, setShowContactNote] = useState(false);
+  const [savedContactNote, setSavedContactNote] = useState('');
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [copyEmailDone, setCopyEmailDone] = useState(false);
 
   const handleBodyScroll = useCallback(() => {
     const el = bodyScrollRef.current;
@@ -471,9 +536,61 @@ export function EmailView({
     setFindCurrentIdx(0);
     setQuickReplyOpen(false);
     setQuickReplyText('');
+    setShowFullHeaders(false);
+    setDarkBody(false);
     if (autoMarkTimerRef.current) { clearTimeout(autoMarkTimerRef.current); autoMarkTimerRef.current = null; }
     if (bodyScrollRef.current) bodyScrollRef.current.scrollTop = 0;
   }, [email?.id]);
+
+  // Load contact note when sender changes
+  useEffect(() => {
+    if (!email?.from.email) return;
+    const n = getContactNote(email.from.email);
+    setSavedContactNote(n);
+    setContactNote(n);
+    setShowContactNote(false);
+  }, [email?.from.email]);
+
+  // Quoted reply collapse — inject toggle button into rendered email body
+  useEffect(() => {
+    const container = bodyScrollRef.current;
+    if (!container) return;
+    const timer = setTimeout(() => {
+      // Remove previously injected toggles
+      container.querySelectorAll('.owl-quote-toggle').forEach(el => el.remove());
+      // Reset any previously hidden quotes
+      container.querySelectorAll<HTMLElement>('[data-owl-quote]').forEach(el => {
+        el.style.display = '';
+        delete el.dataset.owlQuote;
+      });
+
+      const QUOTE_SEL = '.gmail_quote, .moz-cite-prefix, [class*="quoted"], [class*="reply"], blockquote';
+      const allQuotes = Array.from(container.querySelectorAll<HTMLElement>(QUOTE_SEL));
+      // Only top-level quotes (not nested)
+      const topQuotes = allQuotes.filter(q => !q.parentElement?.closest(QUOTE_SEL));
+      if (topQuotes.length === 0) return;
+
+      topQuotes.forEach(q => {
+        q.style.display = 'none';
+        q.dataset.owlQuote = 'true';
+      });
+
+      const btn = document.createElement('button');
+      btn.className = 'owl-quote-toggle';
+      const count = topQuotes.length > 1 ? ` (${topQuotes.length})` : '';
+      btn.textContent = `▾ Alıntıyı göster${count}`;
+      btn.style.cssText = 'display:inline-flex;align-items:center;gap:4px;margin:8px 0;padding:3px 10px;font-size:12px;border:1px solid rgba(128,128,128,0.3);border-radius:6px;cursor:pointer;background:transparent;color:inherit;opacity:0.65;';
+      let expanded = false;
+      btn.addEventListener('click', () => {
+        expanded = !expanded;
+        topQuotes.forEach(q => { q.style.display = expanded ? '' : 'none'; });
+        btn.textContent = expanded ? '▴ Alıntıyı gizle' : `▾ Alıntıyı göster${count}`;
+        btn.style.opacity = expanded ? '0.45' : '0.65';
+      });
+      topQuotes[0].parentNode?.insertBefore(btn, topQuotes[0]);
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [email?.id, email?.bodyHtml, email?.bodyText]);
 
   // Auto-mark read after scrolling 80%+ for 2 seconds
   useEffect(() => {
@@ -664,6 +781,27 @@ export function EmailView({
     return mins;
   })();
 
+  // Email tone/category detection — local heuristic, instant
+  const emailTone = (() => {
+    const text = ((email.bodyText || email.bodyHtml?.replace(/<[^>]*>/g, '') || '') + ' ' + email.subject).toLowerCase();
+    const from = email.from.email.toLowerCase();
+    if (/urgent|acil|asap|immediately|hemen|kritik|critical|son\s+gün|deadline|son\s+tarih/.test(text))
+      return { label: 'Acil', emoji: '🚨', bg: 'bg-red-500/15', border: 'border-red-500/30', text: 'text-red-400', tip: 'Acil veya kritik içerik tespit edildi' };
+    if (/meeting|toplantı|call|görüşme|zoom|teams|invite|davet|agenda|gündem|schedule|takvim/.test(text))
+      return { label: 'Toplantı', emoji: '📅', bg: 'bg-blue-500/15', border: 'border-blue-500/30', text: 'text-blue-400', tip: 'Toplantı veya etkinlik içeriyor' };
+    if (/invoice|fatura|payment|ödeme|bill|hesap|receipt|makbuz|transfer|banka|bank|finans|finance/.test(text))
+      return { label: 'Finans', emoji: '💰', bg: 'bg-green-500/15', border: 'border-green-500/30', text: 'text-green-400', tip: 'Finansal içerik tespit edildi' };
+    if (/unsubscribe|abonelik|newsletter|bülten|promotion|promosyon|campaign|kampanya|noreply|no-reply/.test(text + ' ' + from))
+      return { label: 'Bülten', emoji: '📰', bg: 'bg-owl-text-secondary/10', border: 'border-owl-border', text: 'text-owl-text-secondary/60', tip: 'Bülten veya toplu e-posta' };
+    if (/action required|işlem gerekli|please review|lütfen incele|approval|onay|confirm|onayla/.test(text))
+      return { label: 'Eylem', emoji: '📋', bg: 'bg-orange-500/15', border: 'border-orange-500/30', text: 'text-orange-400', tip: 'Eylem veya onay bekleniyor' };
+    if (/congrat|tebrik|thank|teşekkür|well done|bravo|great job|mükemmel|kutlu/.test(text))
+      return { label: 'Olumlu', emoji: '🎉', bg: 'bg-yellow-500/15', border: 'border-yellow-500/30', text: 'text-yellow-400', tip: 'Olumlu veya kutlama içeriği' };
+    if (/question|soru|wondering|merak|could you|yapabilir misin|help|yardım/.test(text))
+      return { label: 'Soru', emoji: '❓', bg: 'bg-purple-500/15', border: 'border-purple-500/30', text: 'text-purple-400', tip: 'Soru veya bilgi talebi' };
+    return null;
+  })();
+
   // Detect date/event mentions in email body
   const detectedEvent = (() => {
     if (!email) return null;
@@ -748,13 +886,52 @@ export function EmailView({
           />
         </div>
       )}
+      {/* ─── NAVIGATION COUNTER ─── */}
+      {emailTotal !== undefined && emailTotal > 1 && (
+        <div className="flex items-center justify-between px-6 py-1.5 border-b border-owl-border/20 bg-owl-surface/30">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onPrevEmail}
+              disabled={emailIndex === 0}
+              className="p-1 rounded hover:bg-owl-surface transition-colors disabled:opacity-30 text-owl-text-secondary"
+              title="Önceki email (K)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
+            </button>
+            <span className="text-[11px] text-owl-text-secondary/60 tabular-nums select-none">
+              {(emailIndex ?? 0) + 1} / {emailTotal}
+            </span>
+            <button
+              onClick={onNextEmail}
+              disabled={emailIndex === emailTotal - 1}
+              className="p-1 rounded hover:bg-owl-surface transition-colors disabled:opacity-30 text-owl-text-secondary"
+              title="Sonraki email (J)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+          <span className="text-[10px] text-owl-text-secondary/30">{emailTotal} email</span>
+        </div>
+      )}
+
       {/* ─── HEADER ─── */}
       <div className="px-6 pt-5 pb-3">
         {/* Subject + Actions */}
         <div className="flex items-start justify-between gap-4 mb-3">
-          <h1 className="text-[22px] font-semibold text-owl-text leading-snug tracking-tight flex-1">
-            {email.subject}
-          </h1>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-[22px] font-semibold text-owl-text leading-snug tracking-tight">
+              {email.subject}
+            </h1>
+            {emailTone && (
+              <span
+                className={`inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${emailTone.bg} ${emailTone.border} ${emailTone.text} cursor-default select-none`}
+                title={emailTone.tip}
+              >
+                <span>{emailTone.emoji}</span>
+                <span>{emailTone.label}</span>
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-0.5 flex-shrink-0 mt-0.5">
             <button
               onClick={onToggleStar}
@@ -825,6 +1002,45 @@ export function EmailView({
                       Yanıtla
                     </button>
                   </div>
+                  {/* Contact Note */}
+                  <div className="mt-2 pt-2 border-t border-owl-border/30">
+                    {!showContactNote ? (
+                      <button
+                        onClick={() => setShowContactNote(true)}
+                        className="w-full flex items-center gap-1.5 text-xs text-owl-text-secondary/60 hover:text-owl-accent transition-colors text-left"
+                      >
+                        <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                        </svg>
+                        {savedContactNote ? (
+                          <span className="truncate italic text-owl-text-secondary/70">{savedContactNote}</span>
+                        ) : (
+                          <span>Kişi notu ekle…</span>
+                        )}
+                      </button>
+                    ) : (
+                      <div>
+                        <textarea
+                          autoFocus
+                          value={contactNote}
+                          onChange={(e) => setContactNote(e.target.value)}
+                          placeholder="Bu kişi hakkında özel not…"
+                          rows={3}
+                          className="w-full bg-owl-bg text-owl-text text-xs rounded-lg px-2 py-1.5 border border-owl-border/60 focus:border-owl-accent/50 focus:outline-none resize-none placeholder-owl-text-secondary/40"
+                        />
+                        <div className="flex gap-1.5 mt-1.5">
+                          <button
+                            onClick={() => { setContactNoteStorage(email.from.email, contactNote); setSavedContactNote(contactNote.trim()); setShowContactNote(false); }}
+                            className="flex-1 py-1 text-xs bg-owl-accent text-white rounded-lg hover:bg-owl-accent/90 transition-colors font-medium"
+                          >Kaydet</button>
+                          <button
+                            onClick={() => { setContactNote(savedContactNote); setShowContactNote(false); }}
+                            className="px-2 py-1 text-xs text-owl-text-secondary hover:text-owl-text hover:bg-owl-bg rounded-lg transition-colors"
+                          >İptal</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -882,14 +1098,75 @@ export function EmailView({
               </svg>
               ~{readingTime} dk
             </span>
+            {/* Email size estimate */}
+            {(() => {
+              const bytes = (email.bodyHtml?.length || 0) + (email.bodyText?.length || 0);
+              if (bytes < 100) return null;
+              const kb = bytes / 1024;
+              const label = kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : kb >= 1 ? `${kb.toFixed(0)} KB` : `${bytes} B`;
+              return (
+                <span className="text-[11px] text-owl-text-secondary/30 tabular-nums" title="Tahmini email boyutu">{label}</span>
+              );
+            })()}
+            {/* View count */}
+            {emailViewCount > 1 && (
+              <span className="text-[11px] text-owl-text-secondary/25 tabular-nums" title={`Bu email ${emailViewCount} kez açıldı`}>
+                {emailViewCount}×
+              </span>
+            )}
+            {/* Dark body toggle */}
+            <button
+              onClick={() => setDarkBody(p => !p)}
+              className={`p-1 rounded-lg transition-colors text-[11px] font-medium border ${darkBody ? 'text-owl-accent border-owl-accent/40 bg-owl-accent/10' : 'text-owl-text-secondary/40 border-owl-border/40 hover:text-owl-text-secondary'}`}
+              title={darkBody ? 'Orijinal renge dön' : 'Email renklerini tersine çevir (karanlık mod)'}
+            >🌙</button>
             {/* Font size controls */}
             <div className="flex items-center gap-0.5 bg-owl-surface-2/60 rounded-lg px-1 py-0.5">
               <button onClick={() => changeEmailFontSize(-1)} className="text-[10px] font-bold text-owl-text-secondary/50 hover:text-owl-text-secondary px-1 transition-colors" title="Yazıyı küçült">A-</button>
               <span className="text-[9px] text-owl-text-secondary/30 tabular-nums">{emailFontSize}</span>
               <button onClick={() => changeEmailFontSize(1)} className="text-[11px] font-bold text-owl-text-secondary/50 hover:text-owl-text-secondary px-1 transition-colors" title="Yazıyı büyüt">A+</button>
             </div>
+            {/* Font family toggle */}
+            <button
+              onClick={cycleEmailFont}
+              className="p-1 rounded-lg transition-colors text-[10px] font-semibold border border-owl-border/40 hover:border-owl-accent/40 text-owl-text-secondary/40 hover:text-owl-text-secondary min-w-[28px] text-center"
+              title={`Yazı tipi: ${emailFontFamily === 'sans' ? 'Sans-Serif' : emailFontFamily === 'serif' ? 'Serif' : 'Mono'} (tıkla değiştir)`}
+            >
+              {emailFontFamily === 'sans' ? 'Aa' : emailFontFamily === 'serif' ? 'Tf' : '</>'}
+            </button>
           </div>
         </div>
+      </div>
+
+      {/* ─── FULL HEADER DETAILS ─── */}
+      <div className="px-6">
+        <button
+          onClick={() => setShowFullHeaders(p => !p)}
+          className="text-[11px] text-owl-text-secondary/50 hover:text-owl-accent transition-colors flex items-center gap-1 py-1"
+        >
+          <svg className={`w-3 h-3 transition-transform ${showFullHeaders ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+          </svg>
+          {showFullHeaders ? 'Detayları gizle' : 'Detayları göster'}
+        </button>
+        {showFullHeaders && (
+          <div className="mb-2 rounded-lg bg-owl-surface border border-owl-border/40 text-[11px] font-mono overflow-hidden">
+            {[
+              ['Kimden', `${email.from.name || ''} <${email.from.email}>`],
+              ['Kime', email.to.map(r => `${r.name || ''} <${r.email}>`).join(', ')],
+              ...('cc' in email && Array.isArray((email as {cc?: {name?:string;email:string}[]}).cc) && (email as {cc?: {name?:string;email:string}[]}).cc!.length > 0 ? [['CC', (email as {cc?: {name?:string;email:string}[]}).cc!.map(r => `${r.name || ''} <${r.email}>`).join(', ')]] : []),
+              ['Konu', email.subject],
+              ['Tarih', email.date.toLocaleString('tr-TR', { dateStyle: 'full', timeStyle: 'medium' })],
+              ['Message-ID', email.id],
+              ...(email.hasAttachments ? [['Ekler', 'Var']] : []),
+            ].map(([label, value]) => (
+              <div key={label} className="flex border-b border-owl-border/30 last:border-0">
+                <div className="w-24 shrink-0 px-3 py-1.5 text-owl-text-secondary/60 font-semibold bg-owl-surface-2/50 border-r border-owl-border/30">{label}</div>
+                <div className="px-3 py-1.5 text-owl-text/80 break-all flex-1">{value}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ─── SECURITY INDICATOR BAR ─── */}
@@ -1166,7 +1443,7 @@ export function EmailView({
         }}
         onMouseOut={() => setHoveredLink(null)}
         className="flex-1 overflow-y-auto px-6 pt-4 pb-6"
-        style={{ fontSize: emailFontSize }}
+        style={{ fontSize: emailFontSize, fontFamily: fontFamilyStyle, filter: darkBody ? 'invert(1) hue-rotate(180deg)' : undefined }}
       >
         {hasHtmlContent ? (
           <div
@@ -1309,7 +1586,64 @@ export function EmailView({
             <Icon.Trash />
           </button>
 
+          {/* Read Later toggle */}
+          {onToggleReadLater && (
+            <button
+              onClick={onToggleReadLater}
+              className={`p-2 rounded-xl transition-all ${isEmailReadLater ? 'text-owl-accent bg-owl-accent/10' : 'text-owl-text-secondary/40 hover:text-owl-accent hover:bg-owl-accent/10'}`}
+              title={isEmailReadLater ? 'Sonra Oku\'dan kaldır (B)' : 'Sonra Oku olarak işaretle (B)'}
+            >
+              <svg className="w-4 h-4" fill={isEmailReadLater ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+              </svg>
+            </button>
+          )}
+
+          {/* Important toggle */}
+          {onToggleImportant && (
+            <button
+              onClick={onToggleImportant}
+              className={`p-2 rounded-xl transition-all ${isEmailImportant ? 'text-orange-400 bg-orange-400/10' : 'text-owl-text-secondary/40 hover:text-orange-400 hover:bg-orange-400/10'}`}
+              title={isEmailImportant ? 'Önemliden kaldır (I)' : 'Önemli işaretle (I)'}
+            >
+              <svg className="w-4 h-4" fill={isEmailImportant ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+              </svg>
+            </button>
+          )}
+
           {/* Task creation button */}
+          {/* Copy email details */}
+          {email && (
+            <button
+              onClick={() => {
+                const lines = [
+                  `Konu: ${email.subject}`,
+                  `Kimden: ${email.from.name} <${email.from.email}>`,
+                  `Tarih: ${email.date.toLocaleString('tr-TR', { dateStyle: 'long', timeStyle: 'short' })}`,
+                  '',
+                  email.bodyText?.slice(0, 500) || email.preview || '',
+                ].join('\n');
+                navigator.clipboard.writeText(lines).then(() => {
+                  setCopyEmailDone(true);
+                  setTimeout(() => setCopyEmailDone(false), 2000);
+                });
+              }}
+              className={`p-2 rounded-xl transition-all ${copyEmailDone ? 'text-green-400 bg-green-400/10' : 'text-owl-text-secondary/40 hover:text-owl-text-secondary hover:bg-owl-surface-2/60'}`}
+              title={copyEmailDone ? 'Kopyalandı!' : 'Email detaylarını kopyala'}
+            >
+              {copyEmailDone ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+              )}
+            </button>
+          )}
+
           {onCreateTask && email && (
             <button
               onClick={() => onCreateTask(email.id, email.subject)}
@@ -1355,6 +1689,45 @@ export function EmailView({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
               </svg>
             </button>
+          )}
+
+          {/* Reactions */}
+          {onToggleReaction && email && (
+            <div className="relative flex items-center gap-0.5">
+              {emailReactions.map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => onToggleReaction(emoji)}
+                  className="text-base leading-none p-1 rounded-lg bg-owl-surface-2/60 hover:bg-owl-accent/10 transition-colors"
+                  title={`${emoji} tepkini kaldır`}
+                >
+                  {emoji}
+                </button>
+              ))}
+              <button
+                onClick={() => setShowReactionPicker(p => !p)}
+                className={`p-2 rounded-xl transition-all ${showReactionPicker ? 'text-owl-accent bg-owl-accent/10' : 'text-owl-text-secondary/40 hover:text-owl-text-secondary hover:bg-owl-surface-2/60'}`}
+                title="Tepki ekle"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </button>
+              {showReactionPicker && (
+                <div className="absolute right-0 bottom-full mb-2 flex items-center gap-1 bg-owl-surface border border-owl-border/60 rounded-2xl px-2 py-1.5 shadow-owl-lg z-50">
+                  {REACTION_EMOJIS_EV.map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => { onToggleReaction(emoji); setShowReactionPicker(false); }}
+                      className={`text-xl leading-none p-1 rounded-xl hover:bg-owl-accent/10 transition-all hover:scale-125 ${emailReactions.includes(emoji) ? 'opacity-100' : 'opacity-60 hover:opacity-100'}`}
+                      title={emoji}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Calendar event button (shown when dates detected) */}
