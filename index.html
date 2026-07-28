@@ -24,6 +24,37 @@
       }
     </script>
     <div id="root"></div>
+    <script>
+      // Diagnostic overlay: if the app fails to mount, show the error instead of a black screen.
+      (function () {
+        var shown = false;
+        function show(title, detail) {
+          if (shown) return;
+          shown = true;
+          var root = document.getElementById('root');
+          if (!root) return;
+          root.innerHTML =
+            '<div style="font:13px/1.5 ui-monospace,Consolas,monospace;color:#F0E8F0;padding:24px;height:100%;overflow:auto">' +
+            '<h1 style="font-size:16px;color:#ff0080;margin-bottom:12px">OwlMail — ' + title + '</h1>' +
+            '<pre style="white-space:pre-wrap;word-break:break-word;background:#1c0e1e;border:1px solid #482c4c;border-radius:8px;padding:12px">' +
+            String(detail).replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) +
+            '</pre></div>';
+        }
+        window.addEventListener('error', function (e) {
+          show('Yükleme hatası', (e.message || 'error') + '\n' + (e.filename || '') + ':' + (e.lineno || 0) + '\n' + ((e.error && e.error.stack) || ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          show('Promise hatası', (e.reason && (e.reason.stack || e.reason.message)) || e.reason);
+        });
+        // If nothing rendered after 8s, the bundle never executed.
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.childElementCount === 0) {
+            show('Arayüz yüklenemedi', 'JS paketi çalışmadı (muhtemelen CSP veya WebView2 sorunu).\nURL: ' + location.href + '\nUA: ' + navigator.userAgent);
+          }
+        }, 8000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
