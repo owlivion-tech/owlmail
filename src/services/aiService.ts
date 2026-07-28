@@ -11,7 +11,7 @@ import { isPrivateBuild } from '../config/buildVariant';
 import * as geminiService from './geminiService';
 import * as ollamaService from './ollamaService';
 import * as mcpService from './mcpService';
-import { HOME_AI_URL } from '../config/homeServer';
+import { HOME_AI_URL, HOME_AI_DEFAULT_MODEL } from '../config/homeServer';
 import type { PhishingAnalysis } from './geminiService';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -81,14 +81,39 @@ export const PROVIDERS: Record<AIProvider, ProviderInfo> = {
     defaultModel: 'gpt-4o-mini',
   },
   ollama: {
-    name: 'Home Server (Claude Code)',
-    description: 'Routed through your self-hosted home server — no cloud API key, uses your Claude Code subscription',
+    name: 'Claude Code (Subscription)',
+    description: 'Runs on your self-hosted home server through your Claude Code subscription — no API key, no cloud billing',
     requiresApiKey: false,
     apiKeyPlaceholder: '',
-    models: ['sonnet', 'haiku', 'opus', 'llama3.2', 'mistral'],
-    defaultModel: 'sonnet',
+    // Only what the bridge accepts. Generic Ollama models (llama3.2, mistral)
+    // are rejected by it, so they must not be offered here.
+    models: ['sonnet', 'haiku', 'opus'],
+    defaultModel: HOME_AI_DEFAULT_MODEL,
   },
 };
+
+/** Model aliases the home AI bridge accepts. */
+const HOME_AI_MODELS: readonly string[] = ['sonnet', 'haiku', 'opus'];
+
+/**
+ * Saved settings can still hold a stale model from an older build (an Ollama
+ * model name, or a cloud model id). The bridge rejects anything outside its
+ * alias list, so anything unrecognised falls back to the subscription default.
+ */
+function homeAiModel(settings: Settings): string {
+  const model = settings.ollamaModel;
+  return model && HOME_AI_MODELS.includes(model) ? model : HOME_AI_DEFAULT_MODEL;
+}
+
+/**
+ * Likewise the saved URL may still point at a local Ollama daemon (:11434)
+ * from before the bridge existed. The subscription bridge is the target.
+ */
+function homeAiUrl(settings: Settings): string {
+  const url = settings.ollamaUrl;
+  if (!url || /:11434(\/|$)/.test(url)) return HOME_AI_URL;
+  return url;
+}
 
 // ─── Effective Settings ─────────────────────────────────────────────────────
 
@@ -112,7 +137,11 @@ export function getEffectiveApiKey(settings: Settings): string | undefined {
 
 export function getEffectiveModel(settings: Settings): string {
   const provider = getEffectiveProvider(settings);
-  return settings.aiModel || PROVIDERS[provider].defaultModel;
+  // A model saved under a different provider must not leak through — the home
+  // AI bridge in particular rejects anything outside its alias list.
+  const saved = settings.aiModel;
+  if (saved && PROVIDERS[provider].models.includes(saved)) return saved;
+  return PROVIDERS[provider].defaultModel;
 }
 
 // ─── Claude API ─────────────────────────────────────────────────────────────
@@ -282,8 +311,8 @@ export async function generateReply(
           options.tone,
           options.senderName,
           options.language,
-          settings.ollamaModel || 'llama3.2',
-          settings.ollamaUrl || HOME_AI_URL,
+          homeAiModel(settings),
+          homeAiUrl(settings),
         );
       }
       break;
@@ -329,8 +358,8 @@ export async function summarizeEmail(
       } catch {
         summary = await ollamaService.summarizeEmail(
           content, language,
-          settings.ollamaModel || 'llama3.2',
-          settings.ollamaUrl || HOME_AI_URL,
+          homeAiModel(settings),
+          homeAiUrl(settings),
         );
       }
       break;
@@ -391,8 +420,8 @@ export async function analyzePhishing(
       } catch {
         analysis = await ollamaService.analyzePhishing(
           email, language,
-          settings.ollamaModel || 'llama3.2',
-          settings.ollamaUrl || HOME_AI_URL,
+          homeAiModel(settings),
+          homeAiUrl(settings),
         );
       }
       break;

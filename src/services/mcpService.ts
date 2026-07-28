@@ -82,3 +82,45 @@ export async function isAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+export interface McpDiagnosis {
+  ok: boolean;
+  detail: string;
+}
+
+/**
+ * End-to-end probe used by the settings UI. Unlike isAvailable() this sends an
+ * authenticated POST, so a wrong/missing bearer token surfaces as 401 instead
+ * of silently reporting a healthy connection.
+ */
+export async function diagnose(): Promise<McpDiagnosis> {
+  try {
+    const res = await fetch(MCP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/list' }),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (res.status === 401) {
+      return {
+        ok: false,
+        detail: HOME_AI_TOKEN
+          ? 'Köprü token’ı reddetti (401). Uygulamadaki token sunucudakiyle eşleşmiyor.'
+          : 'Bu yapıya token gömülmemiş (401). Derleme sırasında VITE_HOME_AI_TOKEN verilmemiş.',
+      };
+    }
+    if (!res.ok) {
+      return { ok: false, detail: `Köprü ${res.status} döndü.` };
+    }
+
+    const data = await res.json();
+    const count = data?.result?.tools?.length ?? 0;
+    return count > 0
+      ? { ok: true, detail: `Bağlandı — Claude Code köprüsü, ${count} araç hazır.` }
+      : { ok: false, detail: 'Köprü yanıt verdi ama araç listesi boş.' };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, detail: `Köprüye ulaşılamadı: ${msg}` };
+  }
+}

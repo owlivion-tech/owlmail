@@ -16,6 +16,7 @@ interface AISettingsProps {
 export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
   const { t } = useTranslation();
   const [ollamaStatus, setOllamaStatus] = useState<'idle' | 'checking' | 'connected' | 'error'>('idle');
+  const [ollamaDetail, setOllamaDetail] = useState('');
 
   const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     onSettingsChange({ ...settings, [key]: value });
@@ -25,14 +26,19 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
   const providerInfo = PROVIDERS[activeProvider];
   const apiKey = settings.aiApiKey || settings.geminiApiKey || '';
 
+  // Authenticated end-to-end probe: reports *why* it failed (401 vs network)
+  // rather than just a red dot.
   const checkOllama = async () => {
     setOllamaStatus('checking');
+    setOllamaDetail('');
     try {
-      const { testConnection } = await import('../../services/ollamaService');
-      const ok = await testConnection(settings.ollamaUrl || HOME_AI_URL);
-      setOllamaStatus(ok ? 'connected' : 'error');
-    } catch {
+      const { diagnose } = await import('../../services/mcpService');
+      const result = await diagnose();
+      setOllamaStatus(result.ok ? 'connected' : 'error');
+      setOllamaDetail(result.detail);
+    } catch (err) {
       setOllamaStatus('error');
+      setOllamaDetail(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -135,7 +141,11 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
         </section>
       ) : activeProvider === 'ollama' ? (
         <section className="bg-owl-surface border border-owl-border rounded-xl p-4 sm:p-6">
-          <h3 className="text-lg font-medium text-owl-text mb-4">Ollama Connection</h3>
+          <h3 className="text-lg font-medium text-owl-text mb-1">Claude Code Bridge</h3>
+          <p className="text-xs text-owl-text-secondary mb-4">
+            Kendi ev sunucunuzdaki köprü üzerinden Claude Code aboneliğinizi kullanır —
+            API anahtarı gerekmez, kullandıkça ödeme yoktur.
+          </p>
 
           <div className="space-y-4">
             <div>
@@ -144,22 +154,26 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
                 type="text"
                 value={settings.ollamaUrl || HOME_AI_URL}
                 onChange={(e) => updateSetting('ollamaUrl', e.target.value)}
-                placeholder="http://localhost:11434"
+                placeholder={HOME_AI_URL}
                 className="mt-1 w-full px-4 py-2 bg-owl-bg border border-owl-border rounded-lg focus:outline-none focus:ring-2 focus:ring-owl-accent text-sm text-owl-text"
               />
             </div>
 
             <div>
               <label className="text-sm font-medium text-owl-text">Model</label>
-              <input
-                type="text"
-                value={settings.ollamaModel || 'llama3.2'}
+              {/* A dropdown, not free text: the bridge only accepts these
+                  aliases and a typo here silently breaks every AI feature. */}
+              <select
+                value={providerInfo.models.includes(settings.ollamaModel) ? settings.ollamaModel : providerInfo.defaultModel}
                 onChange={(e) => updateSetting('ollamaModel', e.target.value)}
-                placeholder="llama3.2"
                 className="mt-1 w-full px-4 py-2 bg-owl-bg border border-owl-border rounded-lg focus:outline-none focus:ring-2 focus:ring-owl-accent text-sm text-owl-text"
-              />
+              >
+                {providerInfo.models.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
               <p className="text-xs text-owl-text-secondary mt-1">
-                Suggested: {providerInfo.models.join(', ')}
+                Claude Code abonelik modelleri — varsayılan {providerInfo.defaultModel}.
               </p>
             </div>
 
@@ -178,10 +192,16 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
               )}
               {ollamaStatus === 'error' && (
                 <span className="flex items-center gap-1.5 text-sm text-red-400">
-                  <div className="w-2 h-2 rounded-full bg-red-500" /> Connection failed
+                  <div className="w-2 h-2 rounded-full bg-red-500" /> Bağlantı başarısız
                 </span>
               )}
             </div>
+
+            {ollamaDetail && (
+              <p className={`text-xs ${ollamaStatus === 'error' ? 'text-red-400' : 'text-owl-text-secondary'}`}>
+                {ollamaDetail}
+              </p>
+            )}
           </div>
         </section>
       ) : null}
