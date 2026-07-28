@@ -61,3 +61,7 @@ signatures/
 
 # Lock file (using pnpm-lock.yaml)
 package-lock.json
+
+# Editor/hook backup files
+*.bak-*
+*.bak
