@@ -167,6 +167,18 @@ Provide reasons and recommendations in ${lang}.`;
 const server = http.createServer(async (req, res) => {
   addCors(res);
 
+  // Access log — enough to diagnose client problems without ever printing the
+  // token itself (only whether an Authorization header was present).
+  const peer = req.socket.remoteAddress || '?';
+  const authState = req.headers['authorization'] ? 'auth:yes' : 'auth:no';
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    console.log(
+      `${new Date().toISOString()} ${peer} ${req.method} ${req.url} ${authState} ` +
+      `-> ${res.statusCode} (${Date.now() - startedAt}ms)`
+    );
+  });
+
   // CORS preflight
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
