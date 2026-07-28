@@ -156,10 +156,10 @@ function getEmailLabel(id: string): EmailLabel | null {
 type AccentTheme = 'violet' | 'blue' | 'emerald' | 'rose' | 'amber' | 'cyan';
 
 const ACCENT_THEMES: Record<AccentTheme, { rgb: string; name: string; hex: string }> = {
-  violet:  { rgb: '139 92 246',  name: 'Mor',   hex: '#8b5cf6' },
+  violet:  { rgb: '204 68 255',  name: 'BabaFPV',   hex: '#cc44ff' },
   blue:    { rgb: '59 130 246',  name: 'Mavi',  hex: '#3b82f6' },
   emerald: { rgb: '16 185 129',  name: 'Yeşil', hex: '#10b981' },
-  rose:    { rgb: '244 63 94',   name: 'Kırmızı', hex: '#f43f5e' },
+  rose:    { rgb: '255 0 128',   name: 'Hot Pink', hex: '#ff0080' },
   amber:   { rgb: '245 158 11',  name: 'Turuncu', hex: '#f59e0b' },
   cyan:    { rgb: '6 182 212',   name: 'Cyan',  hex: '#06b6d4' },
 };
