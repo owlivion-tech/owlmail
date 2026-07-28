@@ -7,17 +7,16 @@
    preserveAspectRatio="xMidYMid meet"
    xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Purple gradient for Owlivion Mail -->
-    <linearGradient id="purpleGrad" x1="50%" y1="0%" x2="50%" y2="100%">
-      <stop offset="0%" stop-color="#a78bfa" />
-      <stop offset="35%" stop-color="#8b5cf6" />
-      <stop offset="65%" stop-color="#7c3aed" />
-      <stop offset="100%" stop-color="#6d28d9" />
+    <!-- BabaFPV gradient: neon purple → hot pink -->
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#cc44ff" />
+      <stop offset="50%" stop-color="#dd22cc" />
+      <stop offset="100%" stop-color="#ff0080" />
     </linearGradient>
-    <!-- Light purple/white for IVION -->
-    <linearGradient id="lightGrad" x1="50%" y1="0%" x2="50%" y2="100%">
-      <stop offset="0%" stop-color="#e4e4e7" />
-      <stop offset="100%" stop-color="#a1a1aa" />
+    <!-- Light text gradient for IVION -->
+    <linearGradient id="lightGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F0E8F0" />
+      <stop offset="100%" stop-color="#cc44ff" />
     </linearGradient>
   </defs>
   <!-- OWL SHAPE -->

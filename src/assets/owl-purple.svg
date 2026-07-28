@@ -1,9 +1,13 @@
 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="owlGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#a78bfa"/>
-      <stop offset="50%" stop-color="#8b5cf6"/>
-      <stop offset="100%" stop-color="#7c3aed"/>
+    <linearGradient id="owlGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#cc44ff"/>
+      <stop offset="60%" stop-color="#dd22cc"/>
+      <stop offset="100%" stop-color="#ff0080"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e088ff"/>
+      <stop offset="100%" stop-color="#cc44ff"/>
     </linearGradient>
   </defs>
   <!-- Owl body/head -->
@@ -13,21 +17,21 @@
   <!-- Right ear -->
   <path fill="url(#owlGrad)" d="M80 25 Q90 5 75 15 Q70 20 75 30 Z"/>
   <!-- Left eye outer -->
-  <circle cx="35" cy="45" r="18" fill="#1a1a24"/>
+  <circle cx="35" cy="45" r="18" fill="#080408"/>
   <!-- Right eye outer -->
-  <circle cx="65" cy="45" r="18" fill="#1a1a24"/>
+  <circle cx="65" cy="45" r="18" fill="#080408"/>
   <!-- Left eye inner -->
-  <circle cx="35" cy="45" r="12" fill="#8b5cf6"/>
+  <circle cx="35" cy="45" r="12" fill="url(#glowGrad)"/>
   <!-- Right eye inner -->
-  <circle cx="65" cy="45" r="12" fill="#8b5cf6"/>
+  <circle cx="65" cy="45" r="12" fill="url(#glowGrad)"/>
   <!-- Left pupil -->
-  <circle cx="38" cy="43" r="5" fill="#1a1a24"/>
+  <circle cx="38" cy="43" r="5" fill="#080408"/>
   <!-- Right pupil -->
-  <circle cx="68" cy="43" r="5" fill="#1a1a24"/>
+  <circle cx="68" cy="43" r="5" fill="#080408"/>
   <!-- Left eye shine -->
-  <circle cx="33" cy="41" r="3" fill="#e4e4e7" opacity="0.8"/>
+  <circle cx="33" cy="41" r="3" fill="#F0E8F0" opacity="0.9"/>
   <!-- Right eye shine -->
-  <circle cx="63" cy="41" r="3" fill="#e4e4e7" opacity="0.8"/>
+  <circle cx="63" cy="41" r="3" fill="#F0E8F0" opacity="0.9"/>
   <!-- Beak -->
-  <path fill="#f59e0b" d="M50 55 L44 68 Q50 75 56 68 Z"/>
+  <path fill="#ff0080" d="M50 55 L44 68 Q50 75 56 68 Z"/>
 </svg>
